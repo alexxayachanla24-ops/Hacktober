@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chore Enforcement System 95™</title>
+<style>
+:root{--desk:#008080;--face:#c0c0c0;--hi:#fff;--sh:#808080;--dk:#000;--txt:#000;--tb1:#000080;--tb2:#1084d0;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--desk:#004a4a;--face:#a8a8a8;--sh:#6a6a6a}}
+:root[data-theme="dark"]{--desk:#004a4a;--face:#a8a8a8;--sh:#6a6a6a}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;min-height:100%;background:var(--desk);color:var(--txt);font:15px/1.4 Tahoma,"MS Sans Serif",Arial,sans-serif;padding-bottom:64px}
+h1{font:900 clamp(22px,6vw,34px)/1 "Courier New",monospace;text-align:center;margin:14px 8px 4px;color:#ff0;text-shadow:3px 3px #f0f,-2px -2px #0ff;animation:wob 2s infinite}
+.sub{text-align:center;color:#fff;margin:0 8px 8px;font-style:italic}
+@keyframes wob{50%{transform:rotate(-1.2deg) scale(1.02)}}
+.win{background:var(--face);border:2px solid;border-color:var(--hi) var(--dk) var(--dk) var(--hi);box-shadow:inset -1px -1px var(--sh),4px 4px 0 #0006;max-width:560px;margin:10px auto;width:calc(100% - 16px)}
+.tb{background:linear-gradient(90deg,var(--tb1),var(--tb2));color:#fff;font-weight:bold;padding:3px 6px;display:flex;justify-content:space-between;gap:8px}
+.bd{padding:12px}
+label{display:block;font-weight:bold;margin:12px 0 4px}
+select,input[type=text],input:not([type]),input[type=file]{width:100%;font:inherit;padding:6px;background:#fff;color:#000;border:2px solid;border-color:var(--sh) var(--hi) var(--hi) var(--sh)}
+button.b{font:inherit;font-weight:bold;color:#000;background:var(--face);border:2px solid;border-color:var(--hi) var(--dk) var(--dk) var(--hi);padding:8px 14px;cursor:pointer;min-height:40px}
+button.b:active:not(:disabled){border-color:var(--dk) var(--hi) var(--hi) var(--dk)}
+button.b:disabled{color:var(--sh);cursor:not-allowed}
+button.big{width:100%;margin-top:16px;font-size:20px;padding:14px;background:#f0f;color:#fff;text-shadow:2px 2px #000;animation:wob .6s infinite}
+.note{font-size:12px;color:#222;margin:10px 0 0}
+img.pv{max-width:100%;max-height:160px;margin-top:6px;border:2px solid var(--sh)}
+.feed{background:#000;color:#0f0;font:13px "Courier New",monospace;height:300px;overflow:auto;padding:8px}
+.feed div{border-bottom:1px dashed #0f08;padding:4px 0;animation:pop .25s}
+.feed b{color:#ff0}
+@keyframes pop{from{transform:scale(1.15);background:#f0f4}}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.tile{font-size:clamp(34px,12vw,56px);background:#fff;border:3px solid var(--sh);padding:8px 0;text-align:center;cursor:pointer;user-select:none}
+.tile.on{border-color:#00f;background:#cdf}
+.opt{display:block;background:#fff;color:#000;border:2px solid var(--sh);padding:8px;margin:6px 0;cursor:pointer;font-weight:normal}
+.dist span{display:inline-block;font:900 30px "Courier New",monospace;color:#400;text-decoration:line-through wavy #f00}
+.arena{position:relative;height:230px;background:repeating-linear-gradient(45deg,#ff08 0 10px,#0000 10px 20px),#fff;border:2px dashed #f0f;margin-top:10px;overflow:hidden;touch-action:manipulation}
+.dodge{position:absolute;white-space:nowrap;transition:left .15s,top .15s}
+.msg{margin-top:8px;font-weight:bold;color:#a00;min-height:1.4em}
+.prog{height:16px;background:#fff;border:2px solid var(--sh);margin-top:8px}
+.prog i{display:block;height:100%;width:0;background:repeating-linear-gradient(90deg,#00a 0 10px,#fff0 10px 12px)}
+.ov{position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:50;padding:12px}
+.ov .win{margin:0}
+.big-n{font:900 64px "Courier New",monospace;text-align:center;color:#c00}
+.ticker{position:fixed;left:0;right:0;bottom:0;padding-bottom:env(safe-area-inset-bottom,0px);background:#000;color:#0f0;border-top:3px solid #f0f;overflow:hidden;white-space:nowrap;z-index:40;font:bold 14px "Courier New",monospace}
+.ticker span{display:inline-block;padding:8px 0;padding-left:100%;animation:mq 22s linear infinite}
+@keyframes mq{to{transform:translateX(-100%)}}
+.pop{position:fixed;z-index:45;max-width:260px;background:#ff0;color:#000;border:4px ridge #f0f;padding:10px;box-shadow:0 0 18px #0ff;animation:wob .5s infinite}
+.js{position:fixed;inset:0;z-index:99;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;animation:fl .12s infinite}
+.js img,.js .em{width:100%;height:100%;object-fit:cover;transform:scale(2.4);filter:contrast(2.2) saturate(2.5) hue-rotate(-30deg);animation:sh .06s infinite}
+.js .em{font-size:60vmin;display:flex;align-items:center;justify-content:center;transform:scale(1.4)}
+.js h2{position:absolute;bottom:8%;color:#f00;font:900 clamp(34px,11vw,90px) "Courier New",monospace;text-shadow:0 0 20px #f00;margin:0;text-align:center}
+@keyframes fl{50%{background:#800}}
+@keyframes sh{0%{translate:-14px 8px}50%{translate:12px -10px}100%{translate:-6px -14px}}
+@media (prefers-reduced-motion:reduce){h1,button.big,.pop{animation:none}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="ticker"><span id="tk"></span></div>
+<script>
+const S={chore:'',evidence:null,payload:null,ptype:'',target:''};
+const CH=['The Sink Mountain of Crusty Dishes','The Unspeakable Trash Tower','The Unknown Fridge Bio-hazard','The Bathroom of Shame','The Laundry Avalanche (Still Damp)','Custom grievance…'];
+const ADS=['SCRUB-O-MATIC 9000: because you won’t','Hot singles in your area want you to wipe the counter','SPONGE DADDY™ — 3 for $1, 0 for your dignity','Dr. Mold says: “Call your roommate”','FEBREZE-ISH: smells like consequences'];
+const $=s=>document.querySelector(s),app=$('#app');
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+const shuf=a=>a.map(x=>[Math.random(),x]).sort((p,q)=>p[0]-q[0]).map(x=>x[1]);
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+$('#tk').textContent=ADS.concat(ADS).join('   ★   ');
+let timers=[];const T=(f,ms)=>{const t=setTimeout(f,ms);timers.push(t);return t};
+const clearT=()=>{timers.forEach(clearTimeout);timers=[]};
+function head(){return `<h1>CHORE ENFORCEMENT SYSTEM 95™</h1><p class="sub">Dish.exe has stopped responding (so have you).</p>`}
+function win(title,body){return `<div class="win"><div class="tb"><span>${title}</span><span>_ □ ✕</span></div><div class="bd">${body}</div></div>`}
+
+/* ---------- sound ---------- */
+let ac;const A=()=>{ac=ac||new (window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume();return ac};
+function beep(f=440,d=.12,t='square',v=.15,w=0){try{const c=A(),o=c.createOscillator(),g=c.createGain(),s=c.currentTime+w;o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,s);g.gain.exponentialRampToValueAtTime(.001,s+d);o.connect(g).connect(c.destination);o.start(s);o.stop(s+d)}catch(e){}}
+const sfx={ding(){beep(880,.1);beep(1175,.15,'square',.15,.1)},err(){beep(160,.3,'sawtooth')},boing(){beep(300+Math.random()*500,.1,'triangle',.2)},
+tick(){beep(1000,.05)},ok(){[523,659,784].forEach((f,i)=>beep(f,.15,'square',.12,i*.1))},
+doom(){[392,330,262,196].forEach((f,i)=>beep(f,.4,'sawtooth',.15,i*.3))}};
+function scream(){try{const c=A(),n=c.sampleRate*1.6,b=c.createBuffer(1,n,c.sampleRate),d=b.getChannelData(0);
+for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*(1-i/n);
+const s=c.createBufferSource();s.buffer=b;const w=c.createWaveShaper(),k=new Float32Array(256);
+for(let i=0;i<256;i++)k[i]=Math.tanh((i/128-1)*30);w.curve=k;
+const g=c.createGain();g.gain.value=.55;s.connect(w);w.connect(g);g.connect(c.destination);s.start();
+[220,233,880].forEach(f=>{const o=c.createOscillator();o.type='sawtooth';o.frequency.setValueAtTime(f,c.currentTime);
+o.frequency.exponentialRampToValueAtTime(f*3,c.currentTime+1.2);o.connect(w);o.start();o.stop(c.currentTime+1.4)});
+navigator.vibrate&&navigator.vibrate([300,80,300,80,500])}catch(e){}}
+
+/* ---------- setup ---------- */
+function setup(){clearT();
+app.innerHTML=head()+win('💀 Nag Setup Wizard',`
+<label for="ch">1. Select the offense</label><select id="ch">${CH.map(c=>`<option>${c}</option>`).join('')}</select>
+<input id="cu" type="text" placeholder="Describe the hyper-specific grievance" hidden style="margin-top:6px">
+<label for="ev">2. Evidence photo of the crime scene</label><input type="file" id="ev" accept="image/*"><img id="evp" class="pv" alt="" hidden>
+<label for="pl">3. Chaos payload (audio, GIF or image)</label><input type="file" id="pl" accept="audio/*,image/*"><div id="plp"></div>
+<label for="tg">4. Target’s phone or email</label><input id="tg" type="text" placeholder="555-0199 or slacker@example.com" autocomplete="off">
+<button class="b big" id="go">☢ UNLEASH CHAOS ☢</button>
+<p class="note">Notifications here are simulated on this device. The “send for real” button opens your own Messages or Mail app with the link prefilled.</p><div class="msg" id="m"></div>`);
+$('#ch').onchange=e=>{$('#cu').hidden=e.target.value!==CH[5]};
+$('#ev').onchange=e=>{const f=e.target.files[0];if(!f)return;S.evFile=f;S.evidence=URL.createObjectURL(f);const p=$('#evp');p.src=S.evidence;p.hidden=false};
+$('#pl').onchange=e=>{const f=e.target.files[0];if(!f)return;S.plFile=f;S.payload=URL.createObjectURL(f);S.ptype=f.type;
+$('#plp').innerHTML=f.type.startsWith('audio')?`<audio controls src="${S.payload}" style="width:100%;margin-top:6px"></audio>`:`<img class="pv" alt="" src="${S.payload}">`};
+$('#go').onclick=async()=>{const sel=$('#ch').value,cu=$('#cu').value.trim();
+S.chore=sel===CH[5]?cu:sel;S.target=$('#tg').value.trim();
+if(!S.chore){$('#m').textContent='Your grievance is blank. Even your anger is lazy.';sfx.err();return}
+if(!S.target){$('#m').textContent='A target is required. Chaos needs a destination.';sfx.err();return}
+$('#go').disabled=true;$('#m').textContent='Filing your complaint with the authorities…';
+try{const fd=new FormData();fd.append('chore',S.chore);fd.append('target',S.target);if(S.evFile)fd.append('evidence',S.evFile);if(S.plFile)fd.append('payload',S.plFile);
+const r=await fetch('/api/chores',{method:'POST',body:fd});if(!r.ok)throw 0;S.id=(await r.json()).id}catch(e){$('#m').textContent='Server unreachable. Is server.py running?';$('#go').disabled=false;sfx.err();return}
+barrage()}}
+
+function barrage(){clearT();
+app.innerHTML=head()+win('📡 Outbox.exe — DELIVERING PAIN',`<div class="feed" id="feed"></div><div id="after"></div>`);
+if(S.payload&&S.ptype.startsWith('audio')){const a=new Audio(S.payload);a.play().catch(()=>{})}
+const m=[['SMS',c=>`URGENT: ${c} remains unresolved.`],['EMAIL',c=>`Subject: Per my last message — ${c}`],['PUSH',c=>`🔔 ${c} is still there. It has become sentient.`],['SMS',c=>`Hi. It’s me, ${c}. Please come home.`],['EMAIL',c=>`Subject: FINAL NOTICE (not final) — ${c}`],['PUSH',c=>`🔔 We’ve notified the neighbors about ${c}.`]];
+let i=0;const N=14,feed=$('#feed');
+(function tick(){if(i>=N){done();return}
+const [t,f]=m[i%m.length],d=document.createElement('div');
+d.innerHTML=`<b>[${t}→${esc(S.target)}]</b> ${esc(f(S.chore))} <i>(#${i+1})</i>`;
+if(i===0&&S.payload&&S.ptype.startsWith('image'))d.innerHTML+=`<br><img src="${S.payload}" alt="" style="max-width:100px">`;
+feed.prepend(d);sfx.ding();navigator.vibrate&&navigator.vibrate([90,40,90]);i++;T(tick,650-i*20)})();
+function done(){const link=location.origin+'/?c='+S.id,msg=`Your chore (${S.chore}) awaits. Resolve it here: ${link}`;
+const href=S.target.includes('@')?`mailto:${encodeURIComponent(S.target)}?subject=${encodeURIComponent('Chore Resolution Required')}&body=${encodeURIComponent(msg)}`:`sms:${encodeURIComponent(S.target)}?&body=${encodeURIComponent(msg)}`;
+$('#after').innerHTML=`<p><b>14 notifications delivered. Remorse: 0%.</b></p>
+<a class="b" style="display:block;text-decoration:none;text-align:center;margin-bottom:8px;font:inherit" href="${href}"><button class="b" style="width:100%">📲 Send the link for real</button></a>
+<button class="b" id="pt" style="width:100%;margin-bottom:8px">😈 Enter the Portal as the roommate</button>
+<button class="b" id="rs" style="width:100%">↩ Nag again</button>
+<p class="note">Portal link: ${link} · <a href="/dashboard" target="_blank">Dashboard</a></p>`;
+$('#pt').onclick=()=>window.open(link,'_blank');$('#rs').onclick=setup}}
+
+/* ---------- portal ---------- */
+let pops=0;
+function popup(){if(pops>=3)return;T(()=>{pops++;const p=document.createElement('div');p.className='pop';
+p.style.left=Math.random()*40+'%';p.style.top=(15+Math.random()*50)+'%';
+p.innerHTML=`<b>🎉 CONGRATS!</b> You are visitor #1,000,000 and your dishes are still dirty!<br>${esc(pick(ADS))}<br><button class="b" style="margin-top:6px">Close (I’m lazy)</button>`;
+p.querySelector('button').onclick=()=>p.remove();document.body.appendChild(p);sfx.ding();popup()},9000)}
+function frame(n,inner){return head()+win(`🧹 Chore Resolution Portal — Step ${n} of 4`,`<div class="prog"><i style="width:${n*25-10}%"></i></div>${inner}`)}
+function portal(step){clearT();if(step===0)pops=0;
+const chore=S.chore||'The Sink Mountain of Crusty Dishes';
+if(step===0){app.innerHTML=frame(1,`<p>Hello, <b>${esc(S.target||'valued slacker')}</b>. You have been accused of: <b>${esc(chore)}</b>. Prove you’re human, and prove you’re useful.</p><div id="cap"></div>`);popup();captcha(0,chore);return}
+if(step===1)return evasive();
+if(step===2)return age();
+}
+function captcha(n,chore){const box=$('#cap');
+if(n===0){const g=['😔','😞','🥺','😬'],bad=shuf(['😎','🤡','🍕','🧽','🪰','🦆','💅','🛋️']).slice(0,5),tiles=shuf(g.slice(0,3).concat(bad).concat([pick(g.slice(3))]).slice(0,9));
+const want=new Set(tiles.map((t,i)=>g.includes(t)?i:-1).filter(i=>i>=0)),on=new Set();
+box.innerHTML=`<label>CAPTCHA 1/3: Select all images containing visible roommate guilt</label><div class="grid">${tiles.map((t,i)=>`<div class="tile" data-i="${i}" role="button" tabindex="0">${t}</div>`).join('')}</div><button class="b" id="vf" style="margin-top:10px">Verify</button><div class="msg" id="m"></div>`;
+box.querySelectorAll('.tile').forEach(el=>el.onclick=()=>{const i=+el.dataset.i;on.has(i)?on.delete(i):on.add(i);el.classList.toggle('on');sfx.tick()});
+$('#vf').onclick=()=>{if(on.size===want.size&&[...on].every(i=>want.has(i))){sfx.ok();captcha(1,chore)}else{sfx.err();captcha(0,chore);$('#m').textContent='Incorrect. Your guilt detection is as weak as your commitment. Try again.'}}}
+if(n===1){box.innerHTML=`<label>CAPTCHA 2/3: Identify which dish has been sitting for over 72 hours</label>${S.evidence?`<img class="pv" alt="Evidence" src="${S.evidence}">`:`<div style="font-size:56px;text-align:center">🍝🍽️🥣</div>`}
+${[['Day 0.5: still emotionally fresh',0],['Day 3: the mold has a name now',1],['Day 9: legally a tenant',0]].map(([t,r],i)=>`<label class="opt"><input type="radio" name="d" value="${r}"> ${t}</label>`).join('')}<button class="b" id="vf">Verify</button><div class="msg" id="m"></div>`;
+$('#vf').onclick=()=>{const v=document.querySelector('input[name=d]:checked');if(v&&v.value==='1'){sfx.ok();captcha(2,chore)}else{sfx.err();$('#m').textContent=v?'Wrong. The mold is disappointed in you.':'Select something. Indecision is how dishes get this way.'}}}
+if(n===2){const ph=pick(['I SWEAR TO DO DISHES','I AM A GROWN ADULT','THE SINK IS NOT A SHELF']);
+box.innerHTML=`<label>CAPTCHA 3/3: Retype the oath exactly</label><div class="dist" aria-label="${ph}">${[...ph].map(c=>`<span style="transform:rotate(${Math.random()*40-20}deg) translateY(${Math.random()*8-4}px);color:hsl(${Math.random()*360},70%,25%)">${c===' '?'&nbsp;':c}</span>`).join('')}</div><input id="ans" type="text" autocomplete="off" autocapitalize="characters" style="margin-top:8px"><button class="b" id="vf" style="margin-top:8px">Verify</button><div class="msg" id="m"></div>`;
+$('#vf').onclick=()=>{if($('#ans').value.trim().toUpperCase()===ph){sfx.ok();portal(1)}else{sfx.err();captcha(2,chore);$('#m').textContent='Typo detected. Disciplinary action: another oath.'}}}}
+
+function evasive(){let dodges=0;const MAX=6;
+app.innerHTML=frame(2,`<p>All CAPTCHAs passed. Barely. Now submit your proof of repentance.</p><div class="arena" id="ar"><button class="b dodge" id="sb" style="left:30%;top:40%">Upload Proof &amp; Submit</button></div><div class="msg" id="m">Dodges remaining: ${MAX}</div>`);
+const ar=$('#ar'),sb=$('#sb'),lines=['Too slow.','Nope.','Try harder.','Cardio is also a chore.','Almost. (Not really.)','Ugh, FINE.'];
+function move(){const w=ar.clientWidth-sb.offsetWidth-4,h=ar.clientHeight-sb.offsetHeight-4;sb.style.left=Math.max(0,Math.random()*w)+'px';sb.style.top=Math.max(0,Math.random()*h)+'px'}
+function dodge(){if(dodges>=MAX)return false;dodges++;move();sfx.boing();$('#m').textContent=dodges>=MAX?'The button is exhausted. Click it. Quickly.':lines[dodges-1]+' Dodges remaining: '+(MAX-dodges);if(dodges>=MAX)sb.textContent='FINE. CLICK ME.';return true}
+sb.addEventListener('pointerdown',e=>{if(dodge())e.preventDefault()});
+ar.addEventListener('pointermove',e=>{const r=sb.getBoundingClientRect();if(Math.hypot(e.clientX-(r.left+r.width/2),e.clientY-(r.top+r.height/2))<95)dodge()});
+sb.onclick=()=>{if(dodges<MAX){dodge();return}sure()}}
+
+function sure(){let n=5;const ov=document.createElement('div');ov.className='ov';
+ov.innerHTML=win('⚠ ARE YOU REALLY SURE?',`<p style="font-weight:bold">This action is irreversible, unlike your dishes’ stench.</p><div class="big-n" id="n">5</div><button class="b" id="y" disabled style="width:100%;margin-bottom:8px">Yes, I am really sure</button><button class="b" id="no" style="width:100%">No, I am a coward</button>`);
+document.body.appendChild(ov);sfx.doom();
+const iv=setInterval(()=>{n--;$('#n').textContent=Math.max(n,0);sfx.tick();if(n<=0){clearInterval(iv);$('#y').disabled=false;$('#n').textContent='✔';sfx.ok()}},1000);
+$('#no').onclick=()=>{clearInterval(iv);ov.remove();sfx.err();$('#m').textContent='Cowardice noted and logged.'};
+$('#y').onclick=()=>{ov.remove();portal(2)}}
+
+function age(){
+app.innerHTML=frame(3,`<p>Final step: <b>Proof of Age &amp; Adulting Capability™</b>. Upload a clear photo of your face looking responsible.</p><input type="file" id="ap" accept="image/*" capture="user"><img id="app2" class="pv" alt="" hidden><button class="b big" id="sub" style="background:#c00;animation:none">SUBMIT MY ADULTHOOD</button><div class="prog" style="height:20px"><i id="pb"></i></div><div class="msg" id="m"></div>`);
+let ok=false;$('#ap').onchange=e=>{const f=e.target.files[0];if(!f)return;ok=true;S.ageFile=f;const p=$('#app2');p.src=URL.createObjectURL(f);p.hidden=false};
+$('#sub').onclick=()=>{if(!ok){sfx.err();$('#m').textContent='No photo, no adulthood. Please upload evidence of a face.';return}
+$('#sub').disabled=true;if(S.id){const fd=new FormData();fd.append('age',S.ageFile);fetch('/api/chores/'+S.id+'/resolve',{method:'POST',body:fd}).catch(()=>{})}const st=['Scanning for maturity…','Detecting snack crumbs…','Cross-referencing with dish history…','Adulting capability: 12%… PASSED (barely)'];let i=0;
+(function s(){$('#m').textContent=st[i];$('#pb').style.width=(i+1)*25+'%';sfx.tick();i++;if(i<st.length)T(s,1100);else T(jumpscare,900)})()}}
+
+function jumpscare(){scream();
+const j=document.createElement('div');j.className='js';
+j.innerHTML=(S.evidence?`<img src="${S.evidence}" alt="">`:`<div class="em">🍝</div>`)+`<h2>YOU HAD ONE JOB</h2>`;
+document.body.appendChild(j);
+T(()=>{j.remove();finale()},2200)}
+
+function finale(){sfx.doom();T(sfx.ok,1300);
+app.innerHTML=head()+win('✅ Chore Submitted…',`<div style="text-align:center"><div style="font-size:64px">🧼😈</div><h2 style="font:900 28px 'Courier New',monospace;color:#c00;margin:6px 0">CHORE SUBMITTED… FOR NOW.</h2><p>We’ll be watching. The sink will be watching. The mold will be watching.</p><button class="b" id="again">Return to the scene of the crime</button></div>`);
+$('#again').onclick=setup}
+
+(async()=>{const id=new URLSearchParams(location.search).get('c');
+if(id){try{const r=await fetch('/api/chores/'+id);if(r.ok){const d=await r.json();Object.assign(S,{id:d.id,chore:d.chore,target:d.target,evidence:d.evidence,payload:d.payload,ptype:d.ptype});portal(0);return}}catch(e){}}
+setup()})();
+</script>
+</body>
+</html>
