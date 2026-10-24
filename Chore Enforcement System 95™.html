@@ -132,7 +132,7 @@ $('#pt').onclick=()=>portal(0);$('#rs').onclick=setup}}
 let pops=0;
 function popup(){
   T(()=>{
-    // Loop to create 3 popups at the same time continuously
+    // Loop to create 7 popups at the same time continuously
     for(let i = 0; i < 7; i++) {
       const p=document.createElement('div');p.className='pop';
       p.style.left=Math.random()*65+'%';
@@ -143,7 +143,7 @@ function popup(){
     }
     sfx.ding();
     popup(); // Loops infinitely every 4 seconds
-  }, 1000);
+  }, 500);
 }
 function frame(n,inner){return head()+win(`🧹 Chore Resolution Portal — Step ${n} of 4`,`<div class="prog"><i style="width:${n*25-10}%"></i></div>${inner}`)}
 function portal(step){clearT();if(step===0)pops=0;
