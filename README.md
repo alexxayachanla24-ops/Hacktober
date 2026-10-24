@@ -4,6 +4,27 @@ A local Flask app for creating chore complaints, sharing a roommate portal,
 and tracking submissions on a retro dashboard. Notifications in the app are
 simulated; the send link opens your own messaging or mail app.
 
+## Chore Roulette
+
+Use **Spin my chore** in the setup wizard to pick a surprise task: Easy gives
+5 minutes, Medium gives 10, and Boss battle gives 15. Spinning again avoids
+repeating the same task immediately. Edit the selected task to turn it back into
+a regular complaint without a timer.
+
+The countdown starts when the complaint is saved. Its deadline is stored in the
+database and shown in the outbox, shared roommate portal, and dashboard.
+Reloading the portal does not reset it. Overdue challenges still accept submissions.
+
+## Tung Tung chase
+
+In the roommate portal, Tung Tung follows your cursor. Getting caught freezes the
+page for 0.9 seconds and shakes it, with a short grace period before another catch.
+Press Escape to break free early. Grab and drag him, then release to throw him;
+he bounces off the window edges before chasing again. Hit him 20 times within a
+rolling five-second window to trigger a six-second dance. The counter shows your
+progress. Keyboard users can focus him and tap Enter or Space to score hits.
+Reduced-motion preferences disable the shake and dance motion.
+
 ## Run
 
 Use Python 3.10 or newer. From this directory on Windows:
@@ -35,7 +56,7 @@ File types are selected by extension; uploaded content is not decoded or scanned
 
 ```powershell
 .venv/Scripts/python.exe -m unittest discover -s tests -v
-node --test tests/frontend.test.cjs
+node --test tests/frontend.test.cjs tests/tung.test.cjs
 ```
 
 API tests use temporary databases and uploads. Frontend tests use Node's built-in

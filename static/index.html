@@ -241,11 +241,33 @@
         height: 90px;
         object-fit: contain;
         pointer-events: auto;
-        cursor: pointer;
+        cursor: grab;
         user-select: none;
-        z-index: 44;
+        touch-action: none;
+        z-index: 201;
       }
       .walker:focus-visible { outline: 3px solid #ff0; }
+      .walker[data-dragging="true"] { cursor: grabbing; }
+      .walker[data-dancing="true"] { filter: drop-shadow(0 0 10px #ff0); }
+      .tung-hud { position: fixed; right: 8px; bottom: 50px; z-index: 202; max-width: calc(100vw - 16px); padding: 7px 10px; background: #000080; color: #ff0; border: 2px outset #fff; font: bold 12px "Courier New", monospace; pointer-events: none; }
+      .tung-freeze { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 24px; text-align: center; background: #00bfff44; color: #fff; text-shadow: 2px 2px #000; font: bold 24px "Courier New", monospace; cursor: wait; backdrop-filter: blur(2px); }
+      .tung-freeze[hidden] { display: none; }
+      .mog-fighters { display: flex; justify-content: space-between; gap: 16px; text-align: center; }
+      .mog-fighter { flex: 1; padding: 12px 4px; border: 2px ridge #fff; background: #000; color: #fff; }
+      .mog-fighter span { display: block; font-size: 64px; }
+      .mog-track { height: 34px; position: relative; overflow: hidden; border: 3px ridge #fff; background: #397c22; margin: 16px 0 8px; }
+      .mog-fill { height: 100%; background: #00d9ff; width: 50%; transition: width .15s; }
+      .mog-track::after { content: "VS"; position: absolute; left: 50%; top: 3px; transform: translateX(-50%); font-weight: bold; color: #000; }
+      .mog-rope { text-align: center; font-size: 28px; transition: transform .15s; }
+      .mog-push { width: 100%; margin: 12px 0; touch-action: manipulation; }
+      .roulette { margin: 12px 0; padding: 12px; border: 2px solid #808080; background: #000080; color: #fff; }
+      .roulette h2 { margin: 0 0 6px; font: bold 20px "Courier New", monospace; color: #ff0; }
+      .roulette p { margin: 6px 0 10px; }
+      .roulette select { margin-bottom: 8px; }
+      .roulette button { width: 100%; }
+      .roulette-result { margin-top: 10px; padding: 10px; background: #fff; color: #000; border: 2px inset #c0c0c0; }
+      .challenge-clock { padding: 10px; background: #000080; color: #ff0; font: bold 16px "Courier New", monospace; border: 2px inset #c0c0c0; }
+      .challenge-clock[data-overdue="true"] { background: #800000; color: #fff; }
       body.screen-shake { animation: screen-shake 0.45s linear; }
       @keyframes screen-shake {
         0%, 100% { transform: translate(0, 0); }
@@ -387,6 +409,24 @@
           translate: -6px -14px;
         }
       }
+      dialog.egg {
+        padding: 0;
+        color: var(--txt);
+        margin: auto;
+        max-height: calc(100dvh - 32px);
+        overflow: auto;
+      }
+      dialog.egg::backdrop {
+        background: #0009;
+      }
+      .egg .tb h2 {
+        font: inherit;
+        margin: 0;
+      }
+      .egg .egg-icon {
+        font-size: 64px;
+        text-align: center;
+      }
       @media (prefers-reduced-motion: reduce) {
         h1,
         button.big,
@@ -413,6 +453,7 @@
     <audio id="verity" preload="auto" loop>
       <source src="/static/sources/Verity.mp3" type="audio/mpeg" />
     </audio>
+    <script src="/static/tung.js"></script>
     <script>
       const S = {
         chore: "",
@@ -436,6 +477,48 @@
         "Dr. Mold says: “Call your roommate”",
         "FEBREZE-ISH: smells like consequences",
       ];
+      const CHALLENGES = {
+        easy: { minutes: 5, label: "Easy", chores: ["Clear and wipe the kitchen counter", "Take out the trash and replace the liner", "Rescue five abandoned cups from around the house"] },
+        medium: { minutes: 10, label: "Medium", chores: ["Defeat the sink: wash every dirty dish", "Vacuum the shared living room", "Clean the bathroom sink and mirror"] },
+        boss: { minutes: 15, label: "Boss battle", chores: ["Evict expired food and wipe the fridge shelves", "Scrub the shower and give the drain a fighting chance", "Reset the kitchen: dishes, counters, and floor"] },
+      };
+      function challengeText(deadline, now = Date.now()) {
+        const seconds = Math.max(0, Math.ceil((deadline * 1000 - now) / 1000));
+        if (!seconds) return "TIME'S UP! The chore still awaits. You can still submit.";
+        return `TIME LEFT: ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} — beat the clock!`;
+      }
+      function challengeBanner() {
+        if (!S.deadline || !CHALLENGES[S.challenge]) return "";
+        T(updateChallengeClock, 0);
+        return `<p class="challenge-clock" id="deadline" role="timer" aria-label="Challenge time remaining">${esc(CHALLENGES[S.challenge].label)} · ${esc(challengeText(S.deadline))}</p>`;
+      }
+      function updateChallengeClock() {
+        const clock = $("#deadline");
+        if (!clock || !S.deadline) return;
+        clock.textContent = CHALLENGES[S.challenge].label + " · " + challengeText(S.deadline);
+        clock.dataset.overdue = String(Date.now() >= S.deadline * 1000);
+        if (Date.now() < S.deadline * 1000) T(updateChallengeClock, 1000);
+      }
+      function clearChallenge() {
+        S.challenge = null;
+        S.challengeChore = null;
+        $("#roulette-result").hidden = true;
+      }
+      function spinChore() {
+        const difficulty = $("#difficulty").value;
+        const deck = CHALLENGES[difficulty];
+        const choices = deck.chores.filter(chore => chore !== S.challengeChore);
+        const chore = pick(choices);
+        S.challenge = difficulty;
+        S.challengeChore = chore;
+        $("#ch").value = CH[5];
+        $("#cu").hidden = false;
+        $("#cu").value = chore;
+        const result = $("#roulette-result");
+        result.hidden = false;
+        result.textContent = `${deck.label}: ${chore}. ${deck.minutes} minutes. The clock starts when you unleash chaos!`;
+        sfx.ding();
+      }
       const $ = (s) => document.querySelector(s),
         app = $("#app");
       const pick = (a) => a[Math.floor(Math.random() * a.length)];
@@ -480,6 +563,53 @@
       function win(title, body) {
         return `<div class="win"><div class="tb"><span>${title}</span><span>_ □ ✕</span></div><div class="bd">${body}</div></div>`;
       }
+
+      /* ---------- secret maintenance department ---------- */
+      function secretJanitor() {
+        if (document.querySelector("#secret-janitor")) return;
+        const dialog = document.createElement("dialog");
+        dialog.id = "secret-janitor";
+        dialog.className = "win egg";
+        dialog.setAttribute("aria-labelledby", "janitor-title");
+        dialog.innerHTML = `<div class="tb"><h2 id="janitor-title">🧽 Janitor.exe — ADMIN ACCESS</h2><span aria-hidden="true">_ □</span></div>
+<div class="bd"><div class="egg-icon" aria-hidden="true">🧽👑</div>
+<p><b>Achievement unlocked: Lord of the Sponge.</b></p>
+<p>You found the secret maintenance department. We have been monitoring the sink since 1995.</p>
+<p role="status" id="janitor-status">System diagnostic: 0 clean forks detected.</p>
+<button class="b" id="install-motivation" type="button">Install motivation.exe</button>
+<form method="dialog"><button class="b" style="margin-top:12px" autofocus>Return to civilian chores</button></form></div>`;
+        dialog.querySelector("#install-motivation").onclick = (event) => {
+          dialog.querySelector("#janitor-status").textContent =
+            "Motivation installed successfully. Dishes still require manual input.";
+          event.currentTarget.disabled = true;
+        };
+        dialog.addEventListener("close", () => dialog.remove(), { once: true });
+        document.body.appendChild(dialog);
+        dialog.showModal();
+      }
+      // Five quick title clicks also work on touch screens.
+      let titleClicks = 0, lastTitleClick = 0;
+      document.addEventListener("click", (event) => {
+        if (!event.target.closest("#app h1")) return;
+        const now = Date.now();
+        titleClicks = now - lastTitleClick < 1500 ? titleClicks + 1 : 1;
+        lastTitleClick = now;
+        if (titleClicks === 5) { titleClicks = 0; secretJanitor(); }
+      });
+      const secretCode = ["ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown",
+        "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowRight", "b", "a"];
+      let secretProgress = 0;
+      document.addEventListener("keydown", (event) => {
+        if (event.target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])") ||
+            event.ctrlKey || event.altKey || event.metaKey || event.repeat) {
+          secretProgress = 0;
+          return;
+        }
+        const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+        secretProgress = key === secretCode[secretProgress] ? secretProgress + 1 :
+          (key === secretCode[0] ? 1 : 0);
+        if (secretProgress === secretCode.length) { secretProgress = 0; secretJanitor(); }
+      });
 
       /* ---------- sound ---------- */
       let ac;
@@ -651,61 +781,16 @@
         if (mainPage) verity(true);
       });
 
-      let walkerFrame = 0, walkerElement, shakeTimer;
-      function reactToWalker() {
-        play("meme67");
-        clearTimeout(shakeTimer);
-        document.body.classList.remove("screen-shake");
-        void document.body.offsetWidth;
-        document.body.classList.add("screen-shake");
-        shakeTimer = setTimeout(() => document.body.classList.remove("screen-shake"), 450);
-      }
+      let stopWalker = null;
       function walker(on) {
-        cancelAnimationFrame(walkerFrame);
-        walkerElement?.remove();
-        walkerElement = null;
-        clearTimeout(shakeTimer);
-        document.body.classList.remove("screen-shake");
-        if (!on) return;
-        const el = document.createElement("img");
-        el.className = "walker";
-        el.alt = "Tung Tung Sahur";
-        el.src = "/static/sources/walker.png";
-        el.draggable = false;
-        el.tabIndex = 0;
-        el.setAttribute("role", "button");
-        el.setAttribute("aria-label", "Tung Tung Sahur — play 6–7 and shake the screen");
-        el.addEventListener("click", reactToWalker);
-        el.addEventListener("keydown", e => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            reactToWalker();
-          }
+        stopWalker?.();
+        stopWalker = null;
+        if (on) stopWalker = TungGame.mount({
+          app,
+          onHit: () => sfx.boing(),
+          onCatch: () => play("meme67"),
+          onDance: () => { play("meme67"); sfx.ok(); },
         });
-        walkerElement = el;
-        document.body.appendChild(el);
-        let x = 0, y = 0, tx = 0, ty = 0, direction = 1;
-        let last = performance.now();
-        function step(now) {
-          const dt = Math.min((now - last) / 1000, 0.05);
-          last = now;
-          const w = Math.max(0, innerWidth - 90);
-          const h = Math.max(0, innerHeight - 130);
-          x = Math.min(x, w); y = Math.min(y, h);
-          tx = Math.min(tx, w); ty = Math.min(ty, h);
-          if (Math.hypot(tx - x, ty - y) < 5) {
-            tx = Math.random() * w; ty = Math.random() * h;
-          }
-          const dx = tx - x, dy = ty - y;
-          const distance = Math.hypot(dx, dy) || 1;
-          const travel = Math.min(distance, 95 * dt);
-          x += dx / distance * travel; y += dy / distance * travel;
-          if (Math.abs(dx) > 1) direction = dx > 0 ? 1 : -1;
-          const bob = Math.sin(now / 90) * 3;
-          el.style.transform = `translate(${x}px,${Math.max(0, Math.min(h, y + bob))}px) scaleX(${direction})`;
-          walkerFrame = requestAnimationFrame(step);
-        }
-        walkerFrame = requestAnimationFrame(step);
       }
       function scream() {
         if (document.hidden) return;
@@ -772,6 +857,7 @@
             `
 <label for="ch">1. Select the offense</label><select id="ch">${CH.map((c) => `<option>${c}</option>`).join("")}</select>
 <input id="cu" type="text" placeholder="Describe the hyper-specific grievance" hidden style="margin-top:6px">
+<section class="roulette" aria-labelledby="roulette-title"><h2 id="roulette-title">🎰 CHORE ROULETTE</h2><p>Let fate pick the mess. Send your roommate a timed challenge.</p><label for="difficulty">Choose your chaos level</label><select id="difficulty"><option value="easy">Easy · 5 minutes</option><option value="medium" selected>Medium · 10 minutes</option><option value="boss">Boss battle · 15 minutes</option></select><button type="button" class="b" id="spin">🎲 SPIN MY CHORE</button><div class="roulette-result" id="roulette-result" role="status" hidden></div></section>
 <label for="ev">2. Evidence photo of the crime scene</label><input type="file" id="ev" accept="image/*"><img id="evp" class="pv" alt="" hidden>
 <label for="pl">3. Chaos payload (audio, GIF or image)</label><input type="file" id="pl" accept="audio/*,image/*"><div id="plp"></div>
 <label for="tg">4. Target’s phone or email</label><input id="tg" type="text" placeholder="555-0199 or slacker@example.com" autocomplete="off">
@@ -780,7 +866,10 @@
           );
         $("#ch").onchange = (e) => {
           $("#cu").hidden = e.target.value !== CH[5];
+          clearChallenge();
         };
+        $("#cu").oninput = clearChallenge;
+        $("#spin").onclick = spinChore;
         $("#ev").onchange = (e) => {
           const f = e.target.files[0] || null;
           S.evFile = f;
@@ -827,10 +916,13 @@
             const fd = new FormData();
             fd.append("chore", S.chore);
             fd.append("target", S.target);
+            if (S.challenge && S.chore === S.challengeChore) fd.append("challenge", S.challenge);
             if (S.evFile) fd.append("evidence", S.evFile);
             if (S.plFile) fd.append("payload", S.plFile);
             const data = await api("/api/chores", { method: "POST", body: fd });
             S.id = data.id;
+            S.challenge = data.challenge;
+            S.deadline = data.deadline;
           } catch (e) {
             $("#m").textContent = "Could not file your complaint: " + e.message;
             $("#go").disabled = false;
@@ -847,7 +939,7 @@
           head() +
           win(
             "📡 Outbox.exe — DELIVERING PAIN",
-            `<div class="feed" id="feed"></div><div id="after"></div>`,
+            `${challengeBanner()}<div class="feed" id="feed"></div><div id="after"></div>`,
           );
 
         const m = [
@@ -944,7 +1036,7 @@ function popup(){
           head() +
           win(
             `🧹 Chore Resolution Portal — Step ${n} of 4`,
-            `<div class="prog"><i style="width:${n * 25 - 10}%"></i></div>${inner}`,
+            `${challengeBanner()}<div class="prog"><i style="width:${n * 25 - 10}%"></i></div>${inner}`,
           )
         );
       }
@@ -1179,7 +1271,7 @@ ${[
       function age() {
         app.innerHTML = frame(
           3,
-          `<p>Final step: <b>Proof of Age &amp; Adulting Capability™</b>. Upload a clear photo of your face looking responsible.</p><input type="file" id="ap" accept="image/*" capture="user"><img id="app2" class="pv" alt="" hidden><button class="b big" id="sub" style="background:#c00;animation:none">SUBMIT MY ADULTHOOD</button><div class="prog" style="height:20px"><i id="pb"></i></div><div class="msg" id="m"></div>`,
+          `<p><b>Proof of Age &amp; Adulting Capability™</b>. Upload a clear photo of your face looking responsible. Then defend the sink in a mog battle.</p><input type="file" id="ap" accept="image/*" capture="user"><img id="app2" class="pv" alt="" hidden><button class="b big" id="sub" style="background:#c00;animation:none">SUBMIT MY ADULTHOOD</button><div class="prog" style="height:20px"><i id="pb"></i></div><div class="msg" id="m"></div>`,
         );
         S.ageFile = null;
         preview("agePreview", null);
@@ -1228,9 +1320,68 @@ ${[
             sfx.tick();
             i++;
             if (i < st.length) T(s, 1100);
-            else T(jumpscare, 900);
+            else T(mogBattle, 900);
           })();
         };
+      }
+
+      function mogBattle() {
+        clearT();
+        document.querySelectorAll(".pop").forEach(p => p.remove());
+        let power = 50, ticks = 0, finished = false;
+        app.innerHTML = frame(4, `
+<h2 style="text-align:center;margin:8px 0">MOG BATTLE: THE FINAL SCRUB</h2>
+<p>The mold has been mewing since Tuesday. The cleaning spray has had enough.</p>
+<div class="mog-fighters"><div class="mog-fighter"><span>🧴</span><b>CLEANING SPRAY</b><br>+100 hygiene aura</div><div class="mog-fighter"><span>🦠</span><b>THE MOLD</b><br>Unemployed jawline</div></div>
+<p>Tap <b>PUSH / SCRUB</b> to push the blue meter toward 100%. The mold pulls it back automatically. Fill it to win, or outlast the mold for 20 seconds with at least 50% cleaning power.</p>
+<div class="mog-rope" id="mog-rope" aria-hidden="true">🧴 ━━━━━ 🦠</div>
+<div class="mog-track"><div class="mog-fill" id="mog-fill"></div></div>
+<progress id="mog-meter" max="100" value="50" aria-label="Cleaning power" style="width:100%"></progress>
+<p id="mog-status" role="status" aria-live="polite"></p>
+<button class="b mog-push" id="mog-push">💪 PUSH / SCRUB</button>
+<div id="mog-result" role="status" aria-live="polite"></div>
+<button class="b mog-push" id="mog-retry" hidden>↻ Rematch the mold</button>
+<button class="b mog-push" id="mog-continue" hidden>Continue to my verdict →</button>`);
+        function render() {
+          $("#mog-fill").style.width = power + "%";
+          $("#mog-meter").value = power;
+          $("#mog-rope").style.transform = `translateX(${(power - 50) * 0.6}px)`;
+          $("#mog-status").textContent = `Cleaning power: ${power}% · ${Math.max(0, 20 - ticks / 2)}s remaining`;
+        }
+        function finish(won) {
+          if (finished) return;
+          finished = true;
+          $("#mog-push").disabled = true;
+          $("#mog-result").textContent = won
+            ? "🧴 CLEANING SPRAY WINS. Mold mogged. Sink aura restored."
+            : "🦠 THE MOLD MOGGED YOU. Your photo is saved, but your sink needs a rematch.";
+          $("#mog-continue").hidden = false;
+          $("#mog-retry").hidden = won;
+          if (won) { play("meme67"); sfx.ok(); }
+          else sfx.err();
+        }
+        $("#mog-push").onclick = () => {
+          if (finished) return;
+          power = Math.min(100, power + 8);
+          sfx.tick();
+          render();
+          if (power >= 100) finish(true);
+        };
+        $("#mog-retry").onclick = mogBattle;
+        $("#mog-continue").onclick = () => {
+          clearT();
+          jumpscare();
+        };
+        render();
+        function pull() {
+          if (finished) return;
+          ticks++;
+          power = Math.max(0, power - (ticks % 3 === 0 ? 5 : 3));
+          render();
+          if (power === 0 || ticks >= 40) finish(power >= 50);
+          else T(pull, 500);
+        }
+        T(pull, 500);
       }
 
       function jumpscare() {
@@ -1276,6 +1427,8 @@ ${[
               evidence: d.evidence,
               payload: d.payload,
               ptype: d.ptype,
+              challenge: d.challenge,
+              deadline: d.deadline,
             });
             if (d.status === "resolved") finale();
             else portal(0);

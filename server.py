@@ -18,6 +18,7 @@ MEDIA_TYPES = {
     "webm": "audio/webm",
 }
 IMAGE_EXT = {ext for ext, mime in MEDIA_TYPES.items() if mime.startswith("image/")}
+CHALLENGES = {"easy": 5, "medium": 10, "boss": 15}
 routes = Blueprint("chores", __name__)
 
 
@@ -42,6 +43,10 @@ def init_db():
         created REAL, resolved REAL)""")
         if "walker" not in {r[1] for r in c.execute("PRAGMA table_info(chores)")}:
             c.execute("ALTER TABLE chores ADD COLUMN walker TEXT")
+        columns = {r[1] for r in c.execute("PRAGMA table_info(chores)")}
+        for column, kind in (("challenge", "TEXT"), ("deadline", "REAL")):
+            if column not in columns:
+                c.execute(f"ALTER TABLE chores ADD COLUMN {column} {kind}")
 
 
 def save(field, allowed=None, required=False):
@@ -82,7 +87,8 @@ def row_json(r):
             "evidence": url(r["evidence"]), "payload": url(r["payload"]),
             "ptype": r["ptype"] or "", "status": r["status"],
             "age_photo": url(r["age_photo"]), "created": r["created"],
-            "resolved": r["resolved"], "walker": url(r["walker"])}
+            "resolved": r["resolved"], "walker": url(r["walker"]),
+            "challenge": r["challenge"], "deadline": r["deadline"]}
 
 
 @routes.get("/")
@@ -101,15 +107,20 @@ def create_chore():
     target = (request.form.get("target") or "").strip()[:200]
     if not chore or not target:
         return jsonify(error="chore and target are required"), 400
+    challenge = request.form.get("challenge") or None
+    if challenge is not None and challenge not in CHALLENGES:
+        return jsonify(error="Unknown challenge difficulty"), 400
+    created = time.time()
+    deadline = created + CHALLENGES[challenge] * 60 if challenge else None
     ev, _ = save("evidence", IMAGE_EXT)
     pl, ptype = save("payload")
     walker, _ = save("walker", {"png"})
     cid = uuid.uuid4().hex[:8]
-    db().execute("INSERT INTO chores(id,chore,target,evidence,payload,ptype,walker,created) VALUES(?,?,?,?,?,?,?,?)",
-                 (cid, chore, target, ev, pl, ptype, walker, time.time()))
+    db().execute("INSERT INTO chores(id,chore,target,evidence,payload,ptype,walker,created,challenge,deadline) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                 (cid, chore, target, ev, pl, ptype, walker, created, challenge, deadline))
     db().commit()
     g.uploads_committed = True
-    return jsonify(id=cid), 201
+    return jsonify(id=cid, challenge=challenge, deadline=deadline), 201
 
 
 @routes.get("/api/chores")
@@ -155,6 +166,7 @@ d.forEach(c=>{const e=document.createElement('div');e.className='c';
 const t=document.createElement('div');
 const a=document.createElement('b');a.textContent=c.chore;t.append(a,document.createElement('br'),'Target: '+c.target,document.createElement('br'));
 const s=document.createElement('span');s.className='s '+c.status;s.textContent=c.status==='resolved'?'RESOLVED (for now) '+new Date(c.resolved*1000).toLocaleString():'PENDING — still gross';t.append(s,document.createElement('br'));
+if(c.deadline){const timer=document.createElement('span');const left=Math.max(0,Math.ceil(c.deadline-Date.now()/1000));timer.textContent=c.status==='resolved'?'Roulette challenge completed':left?`Roulette: ${Math.floor(left/60)}:${String(left%60).padStart(2,'0')} remaining`:'Roulette: time is up — submission still open';t.append(timer,document.createElement('br'));}
 const k=document.createElement('a');k.href='/?c='+c.id;k.textContent='Portal link';t.append(k);e.append(t);
 [c.evidence,c.age_photo].forEach(u=>{if(u){const i=document.createElement('img');i.src=u;e.append(i)}});l.append(e)})}
 load();setInterval(load,3000);

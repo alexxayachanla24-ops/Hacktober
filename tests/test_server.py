@@ -52,6 +52,28 @@ class ChoreTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertIn("error", response.json)
 
+    def test_roulette_deadline_is_saved_for_each_difficulty(self):
+        for difficulty, minutes in (("easy", 5), ("medium", 10), ("boss", 15)):
+            with self.subTest(difficulty=difficulty), patch("server.time.time", return_value=1000):
+                response = self.create(challenge=difficulty)
+                self.assertEqual(response.status_code, 201)
+                self.assertEqual(response.json["deadline"], 1000 + minutes * 60)
+                saved = self.client.get("/api/chores/" + response.json["id"]).json
+                self.assertEqual(saved["deadline"], response.json["deadline"])
+                self.assertEqual(saved["challenge"], difficulty)
+                self.assertEqual(saved["created"], 1000)
+
+    def test_invalid_roulette_difficulty_is_rejected_before_saving_files(self):
+        response = self.create(challenge="impossible", evidence=(io.BytesIO(b"photo"), "photo.png"))
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.client.get("/api/chores").json, [])
+        self.assertEqual(list((self.root / "uploads").iterdir()), [])
+
+    def test_regular_chores_have_no_deadline(self):
+        response = self.create()
+        self.assertIsNone(response.json["deadline"])
+        self.assertIsNone(response.json["challenge"])
+
     def test_invalid_uploads_leave_no_chores_or_files(self):
         for field, filename, content in (
             ("payload", "script.html", b"html"),
@@ -128,9 +150,11 @@ class ChoreTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json["chore"], "Dishes")
         self.assertIsNone(response.json["walker"])
+        self.assertIsNone(response.json["deadline"])
+        self.assertIsNone(response.json["challenge"])
 
     def test_pages_load(self):
-        for path in ("/", "/dashboard"):
+        for path in ("/", "/dashboard", "/static/tung.js"):
             with self.client.get(path) as response:
                 self.assertEqual(response.status_code, 200)
 
