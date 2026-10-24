@@ -130,20 +130,48 @@ $('#pt').onclick=()=>portal(0);$('#rs').onclick=setup}}
 
 /* ---------- portal ---------- */
 let pops=0;
+const ABSURD_MSGS = [
+  "⚠️ CRITICAL ERROR: Roommate dignity not found.",
+  "🎉 CONGRATS! You are visitor #1,000,000 and your dishes are still dirty!",
+  "🚨 FBI OPEN UP: We saw that unwashed fork under your bed.",
+  "💸 Your landlord has been notified that you haven't wiped the counter.",
+  "🪱 WARNING: Spore density in the sink has reached legal tenancy.",
+  "🛑 STOP SCROLLING AND WASH A PAN. The mold is evolving.",
+  "👻 Your future self is crying because of this kitchen."
+];
+
 function popup(){
   T(()=>{
-    // Loop to create 7 popups at the same time continuously
-    for(let i = 0; i < 7; i++) {
-      const p=document.createElement('div');p.className='pop';
-      p.style.left=Math.random()*65+'%';
-      p.style.top=(10+Math.random()*65)+'%';
-      p.innerHTML=`<b>🎉 CONGRATS!</b> You are visitor #1,000,000 and your dishes are still dirty!<br>${esc(pick(ADS))}<br><button class="b" style="margin-top:6px">Close (I’m lazy)</button>`;
-      p.querySelector('button').onclick=()=>p.remove();
+    // Spawn 5 chaos windows at a time, continuously
+    for(let i = 0; i < 5; i++) {
+      const p = document.createElement('div');
+      p.className = 'pop';
+      // Randomize positions wildly across the screen
+      p.style.left = Math.random() * 75 + '%';
+      p.style.top = (5 + Math.random() * 75) + '%';
+      
+      const randomTitle = pick(['CRITICAL WARNING', 'YOU FOOL', 'ATTENTION SLACKER', 'ERROR 404', 'MOLD ALERT']);
+      const randomText = pick(ABSURD_MSGS);
+      
+      p.innerHTML = `<div class="tb" style="margin:-10px -10px 8px -10px; font-size:11px;"><span>${randomTitle}</span><span>✕</span></div>`+
+                    `<b>${randomText}</b><br>`+
+                    `<button class="b" style="margin-top:8px; width:100%; font-size:11px;">Close (Coward)</button>`;
+      
+      // Clicking close spawns two MORE popups out of sheer spite
+      p.querySelector('button').onclick = () => {
+        p.remove();
+        sfx.err();
+        if(Math.random() > 0.3) {
+          // Spite spawn
+          setTimeout(() => popup(), 50);
+        }
+      };
       document.body.appendChild(p);
     }
     sfx.ding();
-    popup(); // Loops infinitely every 4 seconds
-  }, 500);
+    navigator.vibrate && navigator.vibrate([100, 50, 100]);
+    popup(); // Keep the infinite loop rolling fast
+  }, 1200); // Fires a new wave every 1.2 seconds
 }
 function frame(n,inner){return head()+win(`🧹 Chore Resolution Portal — Step ${n} of 4`,`<div class="prog"><i style="width:${n*25-10}%"></i></div>${inner}`)}
 function portal(step){clearT();if(step===0)pops=0;
