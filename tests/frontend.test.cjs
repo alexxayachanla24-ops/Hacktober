@@ -123,7 +123,7 @@ test('resolution waits for persistence before running completion animation', asy
   respond({ ok: true, json: async () => ({ ok: true }) });
   await submission;
   assert.equal(h.scheduled.length, 1);
-  assert.match(h.element('#m').textContent, /Scanning/);
+  assert.match(h.element('#m').textContent, /Completion already saved/);
 });
 
 test('already resolved portal opens completion screen', async () => {
@@ -204,4 +204,29 @@ test('selecting a completion photo plays Fahh once; clearing the selection does 
   assert.equal(plays, 1);
   h.element('#ap').onchange({target:{files:[]}});
   assert.equal(plays, 1);
+});
+
+test('AI rejection shows grounded feedback and leaves upload retry available', async () => {
+  const h = harness(async () => ({ok:false, status:422, json:async()=>({
+    error:'More cleaning is needed', review:{verdict:'needs_work',reason:'Food residue is visible.',issues:['Wash the plates.']},
+  })}));
+  h.run("S.id='dirty'; age();");
+  h.element('#ap').onchange({target:{files:[new Blob(['photo'])]}});
+  await h.element('#sub').onclick();
+  assert.equal(h.element('#ai-review').hidden,false);
+  assert.match(h.element('#ai-review').textContent,/Food residue/);
+  assert.match(h.element('#ai-review').textContent,/Wash the plates/);
+  assert.equal(h.element('#sub').disabled,false);
+  assert.equal(h.element('#ap').disabled,false);
+  assert.equal(h.scheduled.length,0);
+});
+
+test('successful local review is shown before the game starts', async () => {
+  const h=harness(async()=>({ok:true,json:async()=>({ok:true,review:{verdict:'clean',reason:'Sink and dishes look clean.',issues:[]}})}));
+  h.run("S.id='clean';age();");
+  h.element('#ap').onchange({target:{files:[new Blob(['photo'])]}});
+  await h.element('#sub').onclick();
+  assert.match(h.element('#ai-review').textContent,/Looks clean/);
+  assert.match(h.element('#m').textContent,/Cleanliness review passed/);
+  assert.equal(h.run('S.aiReview.verdict'),'clean');
 });

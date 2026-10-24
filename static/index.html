@@ -539,7 +539,9 @@
         const response = await fetch(path, options);
         const data = await response.json().catch(() => null);
         if (!response.ok) {
-          throw new Error(data?.error || `Request failed (${response.status}).`);
+          const error = new Error(data?.error || `Request failed (${response.status}).`);
+          error.review = data?.review;
+          throw error;
         }
         if (!data) throw new Error("The server returned an invalid response.");
         return data;
@@ -1282,13 +1284,15 @@ ${[
       function age() {
         app.innerHTML = frame(
           3,
-          `<p><b>Proof of Age &amp; Adulting Capability™</b>. Upload a clear photo of your face looking responsible. Then defend the sink in a mog battle.</p><input type="file" id="ap" accept="image/*" capture="user"><img id="app2" class="pv" alt="" hidden><button class="b big" id="sub" style="background:#c00;animation:none">SUBMIT MY ADULTHOOD</button><div class="prog" style="height:20px"><i id="pb"></i></div><div class="msg" id="m"></div>`,
+          `<p><b>AI Cleanliness Inspector</b></p><p>Upload a clear photo of the cleaned area, including the surfaces or items relevant to your chore. The local AI will check for visible mess before you defend the sink in a mog battle.</p><label for="ap">Completion photo</label><input type="file" id="ap" accept="image/*" capture="environment"><img id="app2" class="pv" alt="Your completion photo" hidden><p class="note">Photos are reviewed on this computer using an open-weight model. A photo can show visible cleanliness; it cannot prove sanitation or hidden work.</p><div id="ai-review" role="status" hidden style="white-space:pre-line;background:#fff;padding:10px;margin-top:10px;border:2px inset #808080"></div><button class="b big" id="sub" style="background:#c00;animation:none">SCAN PHOTO &amp; SUBMIT</button><div class="prog" style="height:20px"><i id="pb"></i></div><div class="msg" id="m"></div>`,
         );
         S.ageFile = null;
         preview("agePreview", null);
+        showReview(S.aiReview);
         $("#ap").onchange = (e) => {
           const f = e.target.files[0] || null;
           S.ageFile = f;
+          $("#ai-review").hidden = true;
           if (f) play("fahh");
           const p = $("#app2");
           preview("agePreview", f);
@@ -1300,30 +1304,36 @@ ${[
           if (!S.ageFile) {
             sfx.err();
             $("#m").textContent =
-              "No photo, no adulthood. Please upload evidence of a face.";
+              "Upload a clear photo of the cleaned chore area first.";
             return;
           }
           $("#sub").disabled = true;
-          $("#m").textContent = "Saving your proof of adulthood…";
+          $("#ap").disabled = true;
+          $("#m").textContent = "Reviewing visible cleanliness with local AI… This may take up to two minutes.";
           try {
             if (!S.id) throw new Error("No chore is selected. Open your portal link again.");
             const fd = new FormData();
             fd.append("age", S.ageFile);
-            await api("/api/chores/" + encodeURIComponent(S.id) + "/resolve", {
+            const result = await api("/api/chores/" + encodeURIComponent(S.id) + "/resolve", {
               method: "POST",
               body: fd,
             });
+            S.aiReview = result.review;
+            showReview(result.review);
           } catch (error) {
+            S.aiReview = error.review || null;
+            showReview(error.review);
             $("#m").textContent = "Could not save your submission: " + error.message;
             $("#sub").disabled = false;
+            $("#ap").disabled = false;
             sfx.err();
             return;
           }
           const st = [
-            "Scanning for maturity…",
-            "Detecting snack crumbs…",
-            "Cross-referencing with dish history…",
-            "Adulting capability: 12%… PASSED (barely)",
+            S.aiReview?.verdict === "clean" ? "Cleanliness review passed." : "Completion already saved.",
+            "Completion photo saved.",
+            "Preparing the final scrub…",
+            "Mold battle unlocked!",
           ];
           let i = 0;
           (function s() {
@@ -1335,6 +1345,15 @@ ${[
             else T(mogBattle, 900);
           })();
         };
+      }
+
+      function showReview(review) {
+        const box = $("#ai-review");
+        if (!review) { box.hidden = true; return; }
+        const titles = {clean:"✅ Looks clean", needs_work:"🧽 More cleaning needed", unclear:"📷 A clearer photo is needed"};
+        box.textContent = (titles[review.verdict] || "AI review") + "\n" + review.reason +
+          (review.issues?.length ? "\n" + review.issues.map(issue => "• " + issue).join("\n") : "");
+        box.hidden = false;
       }
 
       function mogBattle() {
@@ -1441,6 +1460,7 @@ ${[
               ptype: d.ptype,
               challenge: d.challenge,
               deadline: d.deadline,
+              aiReview: d.ai_review,
             });
             if (d.status === "resolved") finale();
             else portal(0);

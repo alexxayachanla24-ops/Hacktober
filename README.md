@@ -46,6 +46,56 @@ py -m venv .venv
 .venv/Scripts/python.exe server.py
 ```
 
+## Local AI cleanliness review
+
+New completion submissions require a **clean** verdict from a local vision model.
+The default is [Qwen3-VL-4B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct),
+an open-weight model licensed under Apache 2.0. It runs through
+[Ollama](https://ollama.com/download/windows); no hosted AI service or API key is used.
+The model and Ollama are not bundled or installed by this repository.
+
+1. Install Ollama from the official link above and start it.
+2. Download the model (approximately 3.3 GB):
+
+   ```powershell
+   ollama pull qwen3-vl:4b-instruct
+   ```
+
+3. If Ollama is not already running, run `ollama serve` in another terminal.
+4. Install the Python requirements, start Flask, and open a pending chore's portal.
+   Upload a clear photo of the cleaned area and choose **Scan photo & submit**.
+
+The model returns `clean`, `needs_work`, or `unclear`, along with a reason and
+actionable issues. Only `clean` completes the chore and awards leaderboard points.
+Other verdicts leave it pending so a new photo can be submitted. Missing models,
+timeouts, invalid files, and malformed model responses do not approve completion.
+Existing resolved chores remain resolved; they are not automatically rescanned.
+
+Photos are decoded and checked, oriented, limited to 1024 pixels on the longest
+edge, and re-encoded without metadata before inference. Images must be at least
+64 × 64 pixels and at most 25 megapixels. The AI checks visible relevant mess;
+it cannot establish hygiene, hidden work, or that a photo is current. Its opinion
+can be wrong. Use a photo of the chore area rather than a face or illustration.
+Successful photos are retained; rejected or failed uploads are removed. The latest
+valid AI review is stored with the chore and shown on the dashboard.
+
+Optional PowerShell configuration, set before starting Flask:
+
+```powershell
+$env:OLLAMA_URL = 'http://127.0.0.1:11434'
+$env:OLLAMA_MODEL = 'qwen3-vl:4b-instruct'
+```
+
+Only loopback HTTP addresses are accepted; proxies are bypassed. The default
+inference timeout is 120 seconds. For another locally installed vision model,
+set `OLLAMA_MODEL` to its Ollama name; it must support image input and structured
+JSON output. See the official [Ollama image/structured-output API](https://docs.ollama.com/api/generate).
+
+Tests use controlled model responses; they do not download weights or measure
+real-model accuracy. To verify a real model, install it as above and try a clear
+clean-area photo, a visibly dirty-area photo, and an unrelated image. Confirm the
+returned observations match what is visible before relying on the assessment.
+
 Open http://localhost:5000. The dashboard is at http://localhost:5000/dashboard.
 The server binds to this computer only. SQLite data lives in `chaos.db`, and
 uploaded media lives in `uploads/`. Back up both together to preserve complaints

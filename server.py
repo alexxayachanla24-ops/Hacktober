@@ -3,10 +3,12 @@ import os
 import sqlite3
 import time
 import uuid
+import json
 from contextlib import closing
 
 from flask import Blueprint, Flask, current_app, request, jsonify, send_from_directory, g, abort
 from werkzeug.exceptions import HTTPException
+from cleanliness import InvalidPhoto, ReviewUnavailable, review_photo
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 UPLOADS = os.path.join(BASE, "uploads")
@@ -44,7 +46,7 @@ def init_db():
         if "walker" not in {r[1] for r in c.execute("PRAGMA table_info(chores)")}:
             c.execute("ALTER TABLE chores ADD COLUMN walker TEXT")
         columns = {r[1] for r in c.execute("PRAGMA table_info(chores)")}
-        for column, kind in (("challenge", "TEXT"), ("deadline", "REAL")):
+        for column, kind in (("challenge", "TEXT"), ("deadline", "REAL"), ("ai_review", "TEXT")):
             if column not in columns:
                 c.execute(f"ALTER TABLE chores ADD COLUMN {column} {kind}")
 
@@ -88,7 +90,8 @@ def row_json(r):
             "ptype": r["ptype"] or "", "status": r["status"],
             "age_photo": url(r["age_photo"]), "created": r["created"],
             "resolved": r["resolved"], "walker": url(r["walker"]),
-            "challenge": r["challenge"], "deadline": r["deadline"]}
+            "challenge": r["challenge"], "deadline": r["deadline"],
+            "ai_review": json.loads(r["ai_review"]) if r["ai_review"] else None}
 
 
 @routes.get("/")
@@ -187,17 +190,32 @@ def leaderboard():
 
 @routes.post("/api/chores/<cid>/resolve")
 def resolve(cid):
-    row = db().execute("SELECT status FROM chores WHERE id=?", (cid,)).fetchone()
+    row = db().execute("SELECT status,chore,ai_review FROM chores WHERE id=?", (cid,)).fetchone()
     if not row:
         abort(404)
     if row["status"] == "resolved":
-        return jsonify(ok=True)
+        return jsonify(ok=True, review=json.loads(row["ai_review"]) if row["ai_review"] else None)
     age, _ = save("age", IMAGE_EXT, required=True)
-    db().execute("UPDATE chores SET status='resolved', age_photo=?, resolved=? WHERE id=?",
-                 (age, time.time(), cid))
+    try:
+        review = review_photo(os.path.join(current_app.config["UPLOAD_FOLDER"], age), row["chore"],
+                              base_url=current_app.config["OLLAMA_URL"],
+                              model=current_app.config["OLLAMA_MODEL"],
+                              timeout=current_app.config["OLLAMA_TIMEOUT"])
+    except InvalidPhoto as error:
+        return jsonify(error=str(error)), 400
+    except ReviewUnavailable as error:
+        return jsonify(error=str(error)), 503
+    review["reviewed_at"] = time.time()
+    serialized = json.dumps(review)
+    if review["verdict"] != "clean":
+        db().execute("UPDATE chores SET ai_review=? WHERE id=? AND status='pending'", (serialized, cid))
+        db().commit()
+        return jsonify(error="The photo needs another look. Check the AI feedback and upload a clearer or cleaner result.", review=review), 422
+    updated = db().execute("UPDATE chores SET status='resolved', age_photo=?, resolved=?, ai_review=? WHERE id=? AND status='pending'",
+                 (age, time.time(), serialized, cid))
     db().commit()
-    g.uploads_committed = True
-    return jsonify(ok=True)
+    g.uploads_committed = updated.rowcount == 1
+    return jsonify(ok=True, review=review)
 
 
 DASH = """<!DOCTYPE html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -215,6 +233,7 @@ const t=document.createElement('div');
 const a=document.createElement('b');a.textContent=c.chore;t.append(a,document.createElement('br'),'Target: '+c.target,document.createElement('br'));
 const s=document.createElement('span');s.className='s '+c.status;s.textContent=c.status==='resolved'?'RESOLVED (for now) '+new Date(c.resolved*1000).toLocaleString():'PENDING — still gross';t.append(s,document.createElement('br'));
 if(c.deadline){const timer=document.createElement('span');const left=Math.max(0,Math.ceil(c.deadline-Date.now()/1000));timer.textContent=c.status==='resolved'?'Roulette challenge completed':left?`Roulette: ${Math.floor(left/60)}:${String(left%60).padStart(2,'0')} remaining`:'Roulette: time is up — submission still open';t.append(timer,document.createElement('br'));}
+if(c.ai_review){const review=document.createElement('p');review.textContent='AI cleanliness: '+c.ai_review.verdict+' — '+c.ai_review.reason;t.append(review);}
 const k=document.createElement('a');k.href='/?c='+c.id;k.textContent='Portal link';t.append(k);e.append(t);
 [c.evidence,c.age_photo].forEach(u=>{if(u){const i=document.createElement('img');i.src=u;e.append(i)}});l.append(e)})}
 load();setInterval(load,3000);
@@ -230,6 +249,9 @@ def create_app(config=None):
     app = Flask(__name__, static_folder="static", static_url_path="/static")
     app.config.from_mapping(
         DATABASE=DB, UPLOAD_FOLDER=UPLOADS, MAX_CONTENT_LENGTH=50 * 1024 * 1024,
+        OLLAMA_URL=os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434"),
+        OLLAMA_MODEL=os.environ.get("OLLAMA_MODEL", "qwen3-vl:4b-instruct"),
+        OLLAMA_TIMEOUT=120,
     )
     if config:
         app.config.update(config)

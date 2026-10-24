@@ -8,10 +8,17 @@ import unittest
 from unittest.mock import patch
 
 from server import create_app
+from cleanliness import InvalidPhoto, ReviewUnavailable
 
 
 class ChoreTests(unittest.TestCase):
     def setUp(self):
+        reviewer = patch("server.review_photo", return_value={
+            "verdict": "clean", "reason": "The relevant surfaces appear clean.",
+            "issues": [], "model": "test-vision-model",
+        })
+        self.review = reviewer.start()
+        self.addCleanup(reviewer.stop)
         self.temp = tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent, prefix=".tmp-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -118,6 +125,39 @@ class ChoreTests(unittest.TestCase):
             with self.assertRaises(sqlite3.OperationalError):
                 self.create(evidence=(io.BytesIO(b"photo"), "photo.png"))
         self.assertEqual(list((self.root / "uploads").iterdir()), [])
+
+    def test_dirty_or_unclear_photo_does_not_complete_chore_or_award_points(self):
+        for verdict in ("needs_work", "unclear"):
+            with self.subTest(verdict=verdict):
+                path = "/api/chores/" + self.create().json["id"]
+                self.review.return_value = {"verdict": verdict, "reason": "Food residue is visible.",
+                                            "issues": ["Clean the plates."], "model": "test-model"}
+                response = self.client.post(path + "/resolve", data={"age": (io.BytesIO(b"photo"), "photo.png")})
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(response.json["review"]["verdict"], verdict)
+                saved = self.client.get(path).json
+                self.assertEqual(saved["status"], "pending")
+                self.assertIsNone(saved["resolved"])
+                self.assertIsNone(saved["age_photo"])
+                self.assertEqual(saved["ai_review"]["verdict"], verdict)
+                self.assertEqual(list((self.root / "uploads").iterdir()), [])
+                self.assertEqual(self.client.get("/api/leaderboard").json["roommates"][0]["points"], 0)
+
+    def test_ai_unavailable_and_invalid_photo_allow_retry_without_saved_files(self):
+        path = "/api/chores/" + self.create().json["id"]
+        for error, status in ((ReviewUnavailable("Start Ollama"), 503), (InvalidPhoto("Unreadable photo"), 400)):
+            with self.subTest(status=status):
+                self.review.side_effect = error
+                response = self.client.post(path + "/resolve", data={"age": (io.BytesIO(b"bad"), "photo.png")})
+                self.assertEqual(response.status_code, status)
+                self.assertEqual(self.client.get(path).json["status"], "pending")
+                self.assertEqual(list((self.root / "uploads").iterdir()), [])
+        self.review.side_effect = None
+        response = self.client.post(path + "/resolve", data={"age": (io.BytesIO(b"photo"), "photo.png")})
+        self.assertEqual(response.status_code, 200)
+        saved = self.client.get(path).json
+        self.assertEqual(saved["ai_review"]["verdict"], "clean")
+        self.assertEqual(saved["status"], "resolved")
 
     def test_api_errors_are_json(self):
         for method, path in (
