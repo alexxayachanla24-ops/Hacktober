@@ -31,7 +31,7 @@
         } else if (this.pointer.active) {
           const dx = this.pointer.x - (this.x + 45), dy = this.pointer.y - (this.y + 45);
           const distance = Math.hypot(dx, dy);
-          const travel = Math.min(distance, 170 * dt);
+          const travel = Math.min(distance, 340 * dt);
           if (distance) { this.x += dx / distance * travel; this.y += dy / distance * travel; }
           if (distance <= 34 && now >= this.immuneUntil) {
             this.frozenUntil = now + 900;
