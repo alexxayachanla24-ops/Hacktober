@@ -130,10 +130,21 @@ $('#pt').onclick=()=>portal(0);$('#rs').onclick=setup}}
 
 /* ---------- portal ---------- */
 let pops=0;
-function popup(){if(pops>=3)return;T(()=>{pops++;const p=document.createElement('div');p.className='pop';
-p.style.left=Math.random()*40+'%';p.style.top=(15+Math.random()*50)+'%';
-p.innerHTML=`<b>🎉 CONGRATS!</b> You are visitor #1,000,000 and your dishes are still dirty!<br>${esc(pick(ADS))}<br><button class="b" style="margin-top:6px">Close (I’m lazy)</button>`;
-p.querySelector('button').onclick=()=>p.remove();document.body.appendChild(p);sfx.ding();popup()},9000)}
+function popup(){
+  T(()=>{
+    // Loop to create 3 popups at the same time continuously
+    for(let i = 0; i < 3; i++) {
+      const p=document.createElement('div');p.className='pop';
+      p.style.left=Math.random()*65+'%';
+      p.style.top=(10+Math.random()*65)+'%';
+      p.innerHTML=`<b>🎉 CONGRATS!</b> You are visitor #1,000,000 and your dishes are still dirty!<br>${esc(pick(ADS))}<br><button class="b" style="margin-top:6px">Close (I’m lazy)</button>`;
+      p.querySelector('button').onclick=()=>p.remove();
+      document.body.appendChild(p);
+    }
+    sfx.ding();
+    popup(); // Loops infinitely every 4 seconds
+  }, 2500);
+}
 function frame(n,inner){return head()+win(`🧹 Chore Resolution Portal — Step ${n} of 4`,`<div class="prog"><i style="width:${n*25-10}%"></i></div>${inner}`)}
 function portal(step){clearT();if(step===0)pops=0;
 const chore=S.chore||'The Sink Mountain of Crusty Dishes';
@@ -150,7 +161,7 @@ $('#vf').onclick=()=>{if(on.size===want.size&&[...on].every(i=>want.has(i))){sfx
 if(n===1){box.innerHTML=`<label>CAPTCHA 2/3: Identify which dish has been sitting for over 72 hours</label>${S.evidence?`<img class="pv" alt="Evidence" src="${S.evidence}">`:`<div style="font-size:56px;text-align:center">🍝🍽️🥣</div>`}
 ${[['Day 0.5: still emotionally fresh',0],['Day 3: the mold has a name now',1],['Day 9: legally a tenant',0]].map(([t,r],i)=>`<label class="opt"><input type="radio" name="d" value="${r}"> ${t}</label>`).join('')}<button class="b" id="vf">Verify</button><div class="msg" id="m"></div>`;
 $('#vf').onclick=()=>{const v=document.querySelector('input[name=d]:checked');if(v&&v.value==='1'){sfx.ok();captcha(2,chore)}else{sfx.err();$('#m').textContent=v?'Wrong. The mold is disappointed in you.':'Select something. Indecision is how dishes get this way.'}}}
-if(n===2){const ph=pick(['I SWEAR TO DO DISHES','I AM A GROWN ADULT','THE SINK IS NOT A SHELF']);
+if(n===2){const ph=pick(['I SWEAR TO DO DISHES','I AM A GROWN ADULT','THE SINK IS NOT A SHELF', 'I AM A CHUD', "I AM VERY LAZY"]);
 box.innerHTML=`<label>CAPTCHA 3/3: Retype the oath exactly</label><div class="dist" aria-label="${ph}">${[...ph].map(c=>`<span style="transform:rotate(${Math.random()*40-20}deg) translateY(${Math.random()*8-4}px);color:hsl(${Math.random()*360},70%,25%)">${c===' '?'&nbsp;':c}</span>`).join('')}</div><input id="ans" type="text" autocomplete="off" autocapitalize="characters" style="margin-top:8px"><button class="b" id="vf" style="margin-top:8px">Verify</button><div class="msg" id="m"></div>`;
 $('#vf').onclick=()=>{if($('#ans').value.trim().toUpperCase()===ph){sfx.ok();portal(1)}else{sfx.err();captcha(2,chore);$('#m').textContent='Typo detected. Disciplinary action: another oath.'}}}}
 
