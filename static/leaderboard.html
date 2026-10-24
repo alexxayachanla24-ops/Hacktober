@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Roommate Leaderboard — Chore Enforcement 95</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px 12px 40px; background: #008080; color: #000; font: 15px/1.5 Tahoma, Arial, sans-serif; }
+    main { max-width: 960px; margin: auto; }
+    h1 { margin: 0; color: #ff0; font: 900 clamp(24px, 5vw, 38px) "Courier New", monospace; text-shadow: 2px 2px #f0f; }
+    .intro { color: #fff; margin: 6px 0 20px; }
+    nav { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+    .button { display: inline-block; background: #c0c0c0; color: #000; border: 2px solid; border-color: #fff #000 #000 #fff; padding: 7px 12px; text-decoration: none; font: bold 14px Tahoma, Arial, sans-serif; cursor: pointer; }
+    .button:focus-visible { outline: 3px solid #ff0; outline-offset: 2px; }
+    .button:disabled { color: #555; cursor: wait; }
+    .window { background: #c0c0c0; border: 2px solid; border-color: #fff #000 #000 #fff; box-shadow: 4px 4px #0006; }
+    .titlebar { padding: 5px 10px; background: linear-gradient(90deg, #000080, #1084d0); color: #fff; font-weight: bold; display: flex; justify-content: space-between; }
+    .body { padding: 16px; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+    .stat { text-align: center; padding: 12px 4px; background: #fff; border: 2px inset #ddd; }
+    .stat strong { display: block; color: #000080; font: bold 30px "Courier New", monospace; }
+    #champion { margin: 0 0 16px; padding: 14px; background: #000080; color: #ff0; border: 2px inset #fff; overflow-wrap: anywhere; }
+    #champion strong { display: block; font-size: 20px; }
+    .table-wrap { overflow-x: auto; background: #fff; border: 2px inset #ddd; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    caption { text-align: left; padding: 10px; font-weight: bold; background: #eee; }
+    th, td { padding: 12px 10px; border-bottom: 1px solid #ddd; white-space: nowrap; }
+    th { background: #e4e4e4; font-size: 12px; }
+    td.name { white-space: normal; min-width: 150px; max-width: 260px; overflow-wrap: anywhere; }
+    tbody tr:first-child { background: #fff8c4; }
+    .points { color: #000080; font-weight: bold; }
+    .overdue { display: block; font-size: 12px; color: #a00; }
+    #empty { background: #fff; padding: 28px 16px; text-align: center; border: 2px inset #ddd; }
+    .note { font-size: 12px; margin-bottom: 0; }
+    #status { min-height: 1.5em; margin-top: 0; }
+    [hidden] { display: none !important; }
+    @media (max-width: 480px) { body { padding-top: 16px; } .body { padding: 10px; } .stat { font-size: 12px; } th, td { padding: 10px 8px; } }
+  </style>
+  <script src="/static/leaderboard.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>🏆 ROOMMATE LEADERBOARD</h1>
+    <p class="intro">Settle the household debate. Who actually does the dishes?</p>
+    <nav aria-label="Chore navigation"><a class="button" href="/">+ New complaint</a><a class="button" href="/dashboard">Chore dashboard</a><button class="button" id="refresh" type="button">↻ Refresh scores</button></nav>
+    <section class="window" aria-labelledby="board-title">
+      <div class="titlebar"><span id="board-title">Household_Hall_of_Fame.exe</span><span aria-hidden="true">_ □ ×</span></div>
+      <div class="body">
+        <p id="status" role="status">Loading household scores…</p>
+        <div class="stats" aria-label="Household totals">
+          <div class="stat"><strong id="total-roommates">—</strong>Roommates</div>
+          <div class="stat"><strong id="total-completed">—</strong>Chores completed</div>
+          <div class="stat"><strong id="total-pending">—</strong>Still waiting</div>
+        </div>
+        <div id="champion" hidden></div>
+        <div id="empty" hidden><strong>No scores yet. Suspiciously peaceful.</strong><p>Create a complaint to add a roommate. Complete a chore to earn points.</p><a class="button" href="/">Create the first complaint</a></div>
+        <div class="table-wrap" id="scores" hidden>
+          <table><caption>All-time household standings</caption><thead><tr><th scope="col">Rank</th><th scope="col">Roommate</th><th scope="col">Points</th><th scope="col">Done</th><th scope="col">Pending</th><th scope="col">On time</th><th scope="col">Fastest</th><th scope="col">Average</th></tr></thead><tbody id="rows"></tbody></table>
+        </div>
+        <p class="note">10 points per completed chore + 5 bonus points for beating a Roulette deadline. Ties use completed chores, then average completion time. Roommates are grouped by matching phone/email or name, ignoring case and surrounding spaces. Updates every 10 seconds.</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

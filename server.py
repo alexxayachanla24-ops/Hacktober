@@ -137,6 +137,54 @@ def get_chore(cid):
     return jsonify(row_json(r))
 
 
+@routes.get("/api/leaderboard")
+def leaderboard_data():
+    now = time.time()
+    roommates = {}
+    for row in db().execute("SELECT target,status,created,resolved,deadline FROM chores ORDER BY created,id"):
+        target = (row["target"] or "").strip()
+        if not target:
+            continue
+        member = roommates.setdefault(target.casefold(), {
+            "target": target, "completed": 0, "pending": 0, "on_time": 0,
+            "overdue": 0, "durations": [],
+        })
+        if row["status"] == "resolved":
+            member["completed"] += 1
+            if row["resolved"] is not None and row["created"] is not None and row["resolved"] >= row["created"]:
+                member["durations"].append(row["resolved"] - row["created"])
+            if row["deadline"] is not None and row["resolved"] is not None and row["resolved"] <= row["deadline"]:
+                member["on_time"] += 1
+        else:
+            member["pending"] += 1
+            if row["deadline"] is not None and row["deadline"] < now:
+                member["overdue"] += 1
+    entries = []
+    for member in roommates.values():
+        durations = member.pop("durations")
+        member["points"] = member["completed"] * 10 + member["on_time"] * 5
+        member["fastest_seconds"] = min(durations) if durations else None
+        member["average_seconds"] = sum(durations) / len(durations) if durations else None
+        entries.append(member)
+    entries.sort(key=lambda member: (
+        -member["points"], -member["completed"],
+        member["average_seconds"] if member["average_seconds"] is not None else float("inf"),
+        member["target"].casefold(),
+    ))
+    for rank, member in enumerate(entries, 1):
+        member["rank"] = rank
+    return jsonify(roommates=entries, updated_at=now, totals={
+        "roommates": len(entries),
+        "completed": sum(member["completed"] for member in entries),
+        "pending": sum(member["pending"] for member in entries),
+    })
+
+
+@routes.get("/leaderboard")
+def leaderboard():
+    return send_from_directory(os.path.join(BASE, "static"), "leaderboard.html")
+
+
 @routes.post("/api/chores/<cid>/resolve")
 def resolve(cid):
     row = db().execute("SELECT status FROM chores WHERE id=?", (cid,)).fetchone()
@@ -158,7 +206,7 @@ body{margin:0;background:#008080;font:15px Tahoma,Arial,sans-serif;padding:12px}
 h1{font:900 24px 'Courier New',monospace;color:#ff0;text-shadow:2px 2px #f0f}
 .c{background:#c0c0c0;border:2px solid;border-color:#fff #000 #000 #fff;margin:10px 0;padding:10px;display:flex;gap:10px;flex-wrap:wrap;color:#000}
 .c img{height:90px;border:2px solid #808080}.s{font-weight:bold}.pending{color:#a00}.resolved{color:#060}
-</style><h1>CHORE TRIBUNAL DASHBOARD</h1><a href="/" style="color:#fff">+ New nag</a><div id=l></div>
+</style><h1>CHORE TRIBUNAL DASHBOARD</h1><a href="/" style="color:#fff">+ New nag</a> · <a href="/leaderboard" style="color:#fff">🏆 Roommate leaderboard</a><div id=l></div>
 <script>
 async function load(){const d=await (await fetch('/api/chores')).json(),l=document.getElementById('l');l.innerHTML='';
 if(!d.length)l.textContent='No grievances yet. Suspiciously peaceful.';

@@ -25,6 +25,17 @@ rolling five-second window to trigger a six-second dance. The counter shows your
 progress. Keyboard users can focus him and tap Enter or Space to score hits.
 Reduced-motion preferences disable the shake and dance motion.
 
+## Roommate leaderboard
+
+Open `/leaderboard` from the setup page or dashboard. Existing complaints count
+automatically: each completed chore earns 10 points, with 5 extra for finishing
+a Roulette challenge on time. Standings show completed, pending, overdue, and
+on-time chores plus fastest and average completion times. Ties use completed
+chores, average completion time, then alphabetical order. Matching targets are
+grouped without case or surrounding spaces; use a consistent phone, email, or
+name for each roommate. The board refreshes every 10 seconds and keeps previously
+loaded scores visible if a refresh fails. New scores appear when a chore is resolved.
+
 ## Run
 
 Use Python 3.10 or newer. From this directory on Windows:
@@ -56,7 +67,7 @@ File types are selected by extension; uploaded content is not decoded or scanned
 
 ```powershell
 .venv/Scripts/python.exe -m unittest discover -s tests -v
-node --test tests/frontend.test.cjs tests/tung.test.cjs
+node --test tests/frontend.test.cjs tests/tung.test.cjs tests/leaderboard.test.cjs
 ```
 
 API tests use temporary databases and uploads. Frontend tests use Node's built-in

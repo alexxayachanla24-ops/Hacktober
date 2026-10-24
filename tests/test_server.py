@@ -154,9 +154,69 @@ class ChoreTests(unittest.TestCase):
         self.assertIsNone(response.json["challenge"])
 
     def test_pages_load(self):
-        for path in ("/", "/dashboard", "/static/tung.js"):
+        for path in ("/", "/dashboard", "/static/tung.js", "/leaderboard", "/static/leaderboard.js"):
             with self.client.get(path) as response:
                 self.assertEqual(response.status_code, 200)
+
+    def test_leaderboard_empty(self):
+        response = self.client.get("/api/leaderboard")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["roommates"], [])
+        self.assertEqual(response.json["totals"], {"roommates": 0, "completed": 0, "pending": 0})
+
+    def test_leaderboard_scores_grouping_times_and_tiebreaks(self):
+        rows = [
+            ("1", " Alice@example.com ", "resolved", 100, 160, 170),
+            ("2", "alice@EXAMPLE.com", "resolved", 200, 320, 300),
+            ("3", "ALICE@example.com", "pending", 300, None, 350),
+            ("4", "Bob", "resolved", 100, 200, None),
+            ("5", "Bob", "resolved", 100, 300, None),
+            ("6", "Zoe", "resolved", 100, 100, None),
+            ("7", "Charlie", "resolved", 100, 150, None),
+            ("8", "Dana", "pending", 100, None, None),
+            ("9", " ", "pending", 100, None, None),
+        ]
+        with closing(sqlite3.connect(self.app.config["DATABASE"])) as connection, connection:
+            connection.executemany("INSERT INTO chores(id,target,status,created,resolved,deadline) VALUES(?,?,?,?,?,?)", rows)
+        with patch("server.time.time", return_value=400):
+            result = self.client.get("/api/leaderboard").json
+        self.assertEqual(result["totals"], {"roommates": 5, "completed": 6, "pending": 2})
+        self.assertEqual([member["target"] for member in result["roommates"]],
+                         ["Alice@example.com", "Bob", "Zoe", "Charlie", "Dana"])
+        alice = result["roommates"][0]
+        self.assertEqual(alice["rank"], 1)
+        self.assertEqual(alice["points"], 25)
+        self.assertEqual(alice["completed"], 2)
+        self.assertEqual(alice["on_time"], 1)
+        self.assertEqual(alice["pending"], 1)
+        self.assertEqual(alice["overdue"], 1)
+        self.assertEqual(alice["fastest_seconds"], 60)
+        self.assertEqual(alice["average_seconds"], 90)
+        self.assertEqual(result["roommates"][2]["fastest_seconds"], 0)
+        self.assertIsNone(result["roommates"][-1]["average_seconds"])
+
+    def test_leaderboard_updates_on_resolution_without_duplicate_credit(self):
+        with patch("server.time.time", return_value=1000):
+            cid = self.create(challenge="easy").json["id"]
+        before = self.client.get("/api/leaderboard").json["roommates"][0]
+        self.assertEqual(before["points"], 0)
+        self.assertEqual(before["pending"], 1)
+        with patch("server.time.time", return_value=1100):
+            self.client.post(f"/api/chores/{cid}/resolve", data={"age": (io.BytesIO(b"face"), "face.png")})
+        self.client.post(f"/api/chores/{cid}/resolve")
+        after = self.client.get("/api/leaderboard").json["roommates"][0]
+        self.assertEqual(after["points"], 15)
+        self.assertEqual(after["completed"], 1)
+        self.assertEqual(after["pending"], 0)
+        self.assertEqual(after["average_seconds"], 100)
+
+    def test_leaderboard_legacy_missing_times_do_not_invent_speed_records(self):
+        with closing(sqlite3.connect(self.app.config["DATABASE"])) as connection, connection:
+            connection.execute("INSERT INTO chores(id,target,status) VALUES('old','Legacy','resolved')")
+        member = self.client.get("/api/leaderboard").json["roommates"][0]
+        self.assertEqual(member["points"], 10)
+        self.assertIsNone(member["fastest_seconds"])
+        self.assertIsNone(member["average_seconds"])
 
 
 if __name__ == "__main__":
