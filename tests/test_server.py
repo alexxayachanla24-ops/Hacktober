@@ -1,0 +1,139 @@
+"""API regressions using disposable databases and uploads."""
+import io
+from contextlib import closing
+from pathlib import Path
+import sqlite3
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from server import create_app
+
+
+class ChoreTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent, prefix=".tmp-")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.app = create_app({
+            "TESTING": True,
+            "DATABASE": str(self.root / "test.db"),
+            "UPLOAD_FOLDER": str(self.root / "uploads"),
+        })
+        self.client = self.app.test_client()
+
+    def create(self, **files):
+        return self.client.post("/api/chores", data={
+            "chore": " Wash dishes ", "target": " roommate@example.com ", **files,
+        })
+
+    def test_create_and_read_with_uploads(self):
+        response = self.create(
+            evidence=(io.BytesIO(b"photo"), "evidence.PNG"),
+            payload=(io.BytesIO(b"audio"), "sound.mp3", "application/octet-stream"),
+            walker=(io.BytesIO(b"mascot"), "walker.png"),
+        )
+        self.assertEqual(response.status_code, 201)
+        chore = self.client.get("/api/chores/" + response.json["id"]).json
+        self.assertEqual(chore["chore"], "Wash dishes")
+        self.assertEqual(chore["target"], "roommate@example.com")
+        self.assertEqual(chore["status"], "pending")
+        self.assertEqual(chore["ptype"], "audio/mpeg")
+        with self.client.get(chore["evidence"]) as media:
+            self.assertEqual(media.data, b"photo")
+        with self.client.get(chore["walker"]) as media:
+            self.assertEqual(media.data, b"mascot")
+        self.assertEqual(self.client.get("/api/chores").json, [chore])
+
+    def test_required_fields(self):
+        for data in ({}, {"chore": "  ", "target": "someone"}, {"chore": "dishes"}):
+            with self.subTest(data=data):
+                response = self.client.post("/api/chores", data=data)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("error", response.json)
+
+    def test_invalid_uploads_leave_no_chores_or_files(self):
+        for field, filename, content in (
+            ("payload", "script.html", b"html"),
+            ("evidence", "sound.mp3", b"audio"),
+            ("walker", "walker.gif", b"gif"),
+            ("payload", "empty.png", b""),
+        ):
+            with self.subTest(field=field, filename=filename):
+                response = self.create(**{
+                    "evidence": (io.BytesIO(b"photo"), "valid.png"),
+                    field: (io.BytesIO(content), filename),
+                })
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("error", response.json)
+                self.assertEqual(list((self.root / "uploads").iterdir()), [])
+                self.assertEqual(self.client.get("/api/chores").json, [])
+
+    def test_resolution_requires_photo_and_preserves_first_submission(self):
+        path = "/api/chores/" + self.create().json["id"]
+        for data in ({}, {"age": (io.BytesIO(b"audio"), "age.mp3")}):
+            response = self.client.post(path + "/resolve", data=data)
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(self.client.get(path).json["status"], "pending")
+        response = self.client.post(path + "/resolve", data={
+            "age": (io.BytesIO(b"face"), "face.jpg"),
+        })
+        self.assertEqual(response.status_code, 200)
+        saved = self.client.get(path).json
+        self.assertEqual(saved["status"], "resolved")
+        self.assertIsNotNone(saved["resolved"])
+        with self.client.get(saved["age_photo"]) as media:
+            self.assertEqual(media.data, b"face")
+        response = self.client.post(path + "/resolve", data={
+            "age": (io.BytesIO(b"replacement"), "face.jpg"),
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.client.get(path).json, saved)
+        self.assertEqual(len(list((self.root / "uploads").iterdir())), 1)
+
+    def test_failed_database_write_cleans_upload(self):
+        with patch("server.db", side_effect=sqlite3.OperationalError("unavailable")):
+            with self.assertRaises(sqlite3.OperationalError):
+                self.create(evidence=(io.BytesIO(b"photo"), "photo.png"))
+        self.assertEqual(list((self.root / "uploads").iterdir()), [])
+
+    def test_api_errors_are_json(self):
+        for method, path in (
+            ("get", "/api/chores/missing"),
+            ("post", "/api/chores/missing/resolve"),
+            ("get", "/api/missing"),
+        ):
+            response = getattr(self.client, method)(path)
+            self.assertEqual(response.status_code, 404)
+            self.assertIn("error", response.json)
+        self.app.config["MAX_CONTENT_LENGTH"] = 100
+        response = self.create(payload=(io.BytesIO(b"x" * 200), "large.mp3"))
+        self.assertEqual(response.status_code, 413)
+        self.assertIn("error", response.json)
+
+    def test_upload_path_cannot_escape_upload_directory(self):
+        self.assertEqual(self.client.get("/uploads/../test.db").status_code, 404)
+
+    def test_existing_database_migrates_without_losing_chores(self):
+        legacy = self.root / "legacy.db"
+        with closing(sqlite3.connect(legacy)) as connection, connection:
+            connection.execute("""CREATE TABLE chores (
+                id TEXT PRIMARY KEY, chore TEXT, target TEXT, evidence TEXT,
+                payload TEXT, ptype TEXT, status TEXT DEFAULT 'pending',
+                age_photo TEXT, created REAL, resolved REAL)""")
+            connection.execute("INSERT INTO chores(id,chore,target) VALUES('old','Dishes','Roommate')")
+        app = create_app({"TESTING": True, "DATABASE": str(legacy),
+                          "UPLOAD_FOLDER": str(self.root / "uploads")})
+        response = app.test_client().get("/api/chores/old")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["chore"], "Dishes")
+        self.assertIsNone(response.json["walker"])
+
+    def test_pages_load(self):
+        for path in ("/", "/dashboard"):
+            with self.client.get(path) as response:
+                self.assertEqual(response.status_code, 200)
+
+
+if __name__ == "__main__":
+    unittest.main()

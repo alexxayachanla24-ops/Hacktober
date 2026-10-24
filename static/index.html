@@ -230,8 +230,28 @@
         position: absolute;
         white-space: nowrap;
         transition:
-          left 0.15s,
-          top 0.15s;
+          left 0.06s,
+          top 0.06s;
+      }
+      .walker {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 90px;
+        height: 90px;
+        object-fit: contain;
+        pointer-events: auto;
+        cursor: pointer;
+        user-select: none;
+        z-index: 44;
+      }
+      .walker:focus-visible { outline: 3px solid #ff0; }
+      body.screen-shake { animation: screen-shake 0.45s linear; }
+      @keyframes screen-shake {
+        0%, 100% { transform: translate(0, 0); }
+        15%, 55% { transform: translate(-9px, 5px); }
+        30%, 70% { transform: translate(9px, -5px); }
+        45%, 85% { transform: translate(-5px, -3px); }
       }
       .msg {
         margin-top: 8px;
@@ -387,10 +407,10 @@
       <source src="/static/sources/Gozalo.mp3" type="audio/mpeg" />
     </audio>
     <div class="ticker"><span id="tk"></span></div>
-    <audio id="Android chime" preload="auto">
-      <source src="/static/sources/Android chime.mp3" type="audio/mpeg" />
+    <audio id="chime" preload="auto">
+      <source src="/static/sources/chime.mp3" type="audio/mpeg" />
     </audio>
-    <audio id="Verity" preload="auto">
+    <audio id="verity" preload="auto" loop>
       <source src="/static/sources/Verity.mp3" type="audio/mpeg" />
     </audio>
     <script>
@@ -429,6 +449,20 @@
           /[&<>"]/g,
           (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
         );
+      async function api(path, options) {
+        const response = await fetch(path, options);
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(data?.error || `Request failed (${response.status}).`);
+        }
+        if (!data) throw new Error("The server returned an invalid response.");
+        return data;
+      }
+      function preview(key, file) {
+        if (S[key]?.startsWith("blob:")) URL.revokeObjectURL(S[key]);
+        S[key] = file ? URL.createObjectURL(file) : null;
+        return S[key];
+      }
       $("#tk").textContent = ADS.concat(ADS).join("   ★   ");
       let timers = [];
       const T = (f, ms) => {
@@ -449,15 +483,43 @@
 
       /* ---------- sound ---------- */
       let ac;
+      const activeSounds = new Set();
+      let payloadAudio = null, portalAudio = false;
+      const music = { phonk: false, verity: false };
+      function trackSound(source) {
+        activeSounds.add(source);
+        source.addEventListener("ended", () => activeSounds.delete(source), { once: true });
+        return source;
+      }
+      function silenceAudio() {
+        document.querySelectorAll("audio").forEach(a => a.pause());
+        payloadAudio?.pause();
+        activeSounds.forEach(source => { try { source.stop(); } catch (_) {} });
+        activeSounds.clear();
+      }
+      function syncMusic() {
+        Object.entries(music).forEach(([id, enabled]) => {
+          const a = $("#" + id);
+          if (enabled && !document.hidden) a.play().catch(() => {});
+          else a.pause();
+        });
+      }
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) silenceAudio();
+        else syncMusic();
+      });
+      window.addEventListener("pagehide", silenceAudio);
+      window.addEventListener("pageshow", syncMusic);
       const A = () => {
         ac = ac || new (window.AudioContext || window.webkitAudioContext)();
         if (ac.state === "suspended") ac.resume();
         return ac;
       };
       function beep(f = 440, d = 0.12, t = "square", v = 0.15, w = 0) {
+        if (document.hidden) return;
         try {
           const c = A(),
-            o = c.createOscillator(),
+            o = trackSound(c.createOscillator()),
             g = c.createGain(),
             s = c.currentTime + w;
           o.type = t;
@@ -495,24 +557,158 @@
         },
       };
       const play = (id) => {
+        if (document.hidden) return;
         const a = $("#" + id);
         if (a) {
           a.currentTime = 0;
           a.play().catch(() => {});
         }
       };
+      let chimePromise;
+      const activeChimes = new Set();
+      function trimChime(c, decoded) {
+        // Remove quiet padding so rapid messages don't keep replaying silence.
+        const channels = Array.from({length: decoded.numberOfChannels},
+          (_, i) => decoded.getChannelData(i));
+        let peak = 0;
+        for (const samples of channels) {
+          for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
+        }
+        const threshold = Math.max(0.001, peak * 0.015);
+        let first = decoded.length, last = -1;
+        for (const samples of channels) {
+          for (let i = 0; i < samples.length; i++) {
+            if (Math.abs(samples[i]) > threshold) {
+              first = Math.min(first, i); last = Math.max(last, i);
+            }
+          }
+        }
+        if (last < first) throw new Error("Chime contains no audible sound");
+        const rate = decoded.sampleRate;
+        const start = Math.max(0, first - Math.round(rate * 0.005));
+        // Keep only the notification, with a brief tail; never the full recording.
+        const end = Math.min(decoded.length, last + Math.round(rate * 0.08) + 1,
+          start + Math.round(rate * 1.5));
+        const clip = c.createBuffer(channels.length, end - start, rate);
+        channels.forEach((samples, channel) => {
+          const output = clip.getChannelData(channel);
+          output.set(samples.subarray(start, end));
+          const fade = Math.min(output.length, Math.round(rate * 0.01));
+          for (let i = 0; i < fade; i++) {
+            output[output.length - 1 - i] *= i / fade;
+          }
+        });
+        return clip;
+      }
+      function prepareChime() {
+        // Called directly in the Send click, before its network request.
+        const c = A();
+        if (!chimePromise) {
+          chimePromise = fetch($("#chime source").src)
+            .then(r => { if (!r.ok) throw new Error("Chime unavailable"); return r.arrayBuffer(); })
+            .then(bytes => c.decodeAudioData(bytes))
+            .then(decoded => trimChime(c, decoded))
+            .catch(() => null);
+        }
+        return chimePromise;
+      }
+      function messageChime(buffer) {
+        if (document.hidden) return;
+        if (!buffer) { sfx.ding(); return; }
+        const c = A(), source = trackSound(c.createBufferSource());
+        source.buffer = buffer;
+        source.connect(c.destination);
+        activeChimes.add(source);
+        source.onended = () => { activeChimes.delete(source); source.disconnect(); };
+        // Each message gets its own playback instead of resetting the last one.
+        source.start();
+      }
       const phonk = (on) => {
+        music.phonk = on;
         const a = $("#phonk");
         if (!a) return;
         if (on) {
           a.volume = 0.1;
-          a.play().catch(() => {});
+          syncMusic();
         } else {
           a.pause();
           a.currentTime = 0;
         }
       };
+      let mainPage = false;
+      function verity(on) {
+        music.verity = on;
+        const a = $("#verity");
+        a.volume = 0.1;
+        if (on) syncMusic();
+        else { a.pause(); a.currentTime = 0; }
+      }
+      // Retry background playback after a gesture when autoplay is blocked.
+      document.addEventListener("pointerdown", () => {
+        if (mainPage) verity(true);
+      });
+      document.addEventListener("keydown", () => {
+        if (mainPage) verity(true);
+      });
+
+      let walkerFrame = 0, walkerElement, shakeTimer;
+      function reactToWalker() {
+        play("meme67");
+        clearTimeout(shakeTimer);
+        document.body.classList.remove("screen-shake");
+        void document.body.offsetWidth;
+        document.body.classList.add("screen-shake");
+        shakeTimer = setTimeout(() => document.body.classList.remove("screen-shake"), 450);
+      }
+      function walker(on) {
+        cancelAnimationFrame(walkerFrame);
+        walkerElement?.remove();
+        walkerElement = null;
+        clearTimeout(shakeTimer);
+        document.body.classList.remove("screen-shake");
+        if (!on) return;
+        const el = document.createElement("img");
+        el.className = "walker";
+        el.alt = "Tung Tung Sahur";
+        el.src = "/static/sources/walker.png";
+        el.draggable = false;
+        el.tabIndex = 0;
+        el.setAttribute("role", "button");
+        el.setAttribute("aria-label", "Tung Tung Sahur — play 6–7 and shake the screen");
+        el.addEventListener("click", reactToWalker);
+        el.addEventListener("keydown", e => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            reactToWalker();
+          }
+        });
+        walkerElement = el;
+        document.body.appendChild(el);
+        let x = 0, y = 0, tx = 0, ty = 0, direction = 1;
+        let last = performance.now();
+        function step(now) {
+          const dt = Math.min((now - last) / 1000, 0.05);
+          last = now;
+          const w = Math.max(0, innerWidth - 90);
+          const h = Math.max(0, innerHeight - 130);
+          x = Math.min(x, w); y = Math.min(y, h);
+          tx = Math.min(tx, w); ty = Math.min(ty, h);
+          if (Math.hypot(tx - x, ty - y) < 5) {
+            tx = Math.random() * w; ty = Math.random() * h;
+          }
+          const dx = tx - x, dy = ty - y;
+          const distance = Math.hypot(dx, dy) || 1;
+          const travel = Math.min(distance, 95 * dt);
+          x += dx / distance * travel; y += dy / distance * travel;
+          if (Math.abs(dx) > 1) direction = dx > 0 ? 1 : -1;
+          const bob = Math.sin(now / 90) * 3;
+          el.style.transform = `translate(${x}px,${Math.max(0, Math.min(h, y + bob))}px) scaleX(${direction})`;
+          walkerFrame = requestAnimationFrame(step);
+        }
+        walkerFrame = requestAnimationFrame(step);
+      }
       function scream() {
+        if (document.hidden) return;
         try {
           const c = A(),
             n = c.sampleRate * 1.6,
@@ -520,7 +716,7 @@
             d = b.getChannelData(0);
           for (let i = 0; i < n; i++)
             d[i] = (Math.random() * 2 - 1) * (1 - i / n);
-          const s = c.createBufferSource();
+          const s = trackSound(c.createBufferSource());
           s.buffer = b;
           const w = c.createWaveShaper(),
             k = new Float32Array(256);
@@ -533,7 +729,7 @@
           g.connect(c.destination);
           s.start();
           [220, 233, 880].forEach((f) => {
-            const o = c.createOscillator();
+            const o = trackSound(c.createOscillator());
             o.type = "sawtooth";
             o.frequency.setValueAtTime(f, c.currentTime);
             o.frequency.exponentialRampToValueAtTime(
@@ -551,6 +747,24 @@
       /* ---------- setup ---------- */
       function setup() {
         clearT();
+        portalAudio = false;
+        silenceAudio();
+        payloadAudio = null;
+        ["evidence", "payload", "agePreview"].forEach(key => preview(key, null));
+        Object.keys(S).forEach(key => delete S[key]);
+        Object.assign(S, { chore: "", target: "", evidence: null, payload: null, ptype: "" });
+        if (new URLSearchParams(location.search).has("c")) {
+          const clean = new URL(location.href);
+          clean.searchParams.delete("c");
+          history.replaceState(null, "", clean);
+        }
+        activeChimes.forEach(source => source.stop());
+        activeChimes.clear();
+        mainPage = true;
+        phonk(false);
+        walker(false);
+        document.querySelectorAll(".pop").forEach(p => p.remove());
+        verity(true);
         app.innerHTML =
           head() +
           win(
@@ -568,20 +782,23 @@
           $("#cu").hidden = e.target.value !== CH[5];
         };
         $("#ev").onchange = (e) => {
-          const f = e.target.files[0];
-          if (!f) return;
+          const f = e.target.files[0] || null;
           S.evFile = f;
-          S.evidence = URL.createObjectURL(f);
+          preview("evidence", f);
           const p = $("#evp");
-          p.src = S.evidence;
-          p.hidden = false;
+          if (f) p.src = S.evidence;
+          else p.removeAttribute("src");
+          p.hidden = !f;
         };
         $("#pl").onchange = (e) => {
-          const f = e.target.files[0];
-          if (!f) return;
+          const f = e.target.files[0] || null;
           S.plFile = f;
-          S.payload = URL.createObjectURL(f);
-          S.ptype = f.type;
+          preview("payload", f);
+          S.ptype = f?.type || "";
+          if (!f) {
+            $("#plp").replaceChildren();
+            return;
+          }
           $("#plp").innerHTML = f.type.startsWith("audio")
             ? `<audio controls src="${S.payload}" style="width:100%;margin-top:6px"></audio>`
             : `<img class="pv" alt="" src="${S.payload}">`;
@@ -603,6 +820,7 @@
             sfx.err();
             return;
           }
+          const chimeReady = prepareChime();
           $("#go").disabled = true;
           $("#m").textContent = "Filing your complaint with the authorities…";
           try {
@@ -611,20 +829,19 @@
             fd.append("target", S.target);
             if (S.evFile) fd.append("evidence", S.evFile);
             if (S.plFile) fd.append("payload", S.plFile);
-            const r = await fetch("/api/chores", { method: "POST", body: fd });
-            if (!r.ok) throw 0;
-            S.id = (await r.json()).id;
+            const data = await api("/api/chores", { method: "POST", body: fd });
+            S.id = data.id;
           } catch (e) {
-            $("#m").textContent = "Server unreachable. Is server.py running?";
+            $("#m").textContent = "Could not file your complaint: " + e.message;
             $("#go").disabled = false;
             sfx.err();
             return;
           }
-          barrage();
+          barrage(await chimeReady);
         };
       }
 
-      function barrage() {
+      function barrage(chimeBuffer) {
         clearT();
         app.innerHTML =
           head() +
@@ -655,7 +872,7 @@
           if (i === 0 && S.payload && S.ptype.startsWith("image"))
             d.innerHTML += `<br><img src="${S.payload}" alt="" style="max-width:100px">`;
           feed.prepend(d);
-          sfx.ding();
+          messageChime(chimeBuffer);
           navigator.vibrate && navigator.vibrate([90, 40, 90]);
           i++;
           T(tick, 650 - i * 20);
@@ -668,7 +885,7 @@
             : `sms:${encodeURIComponent(S.target)}?&body=${encodeURIComponent(msg)}`;
           $("#after").innerHTML =
             `<p><b>14 notifications delivered. Remorse: 0%.</b></p>
-<a class="b" style="display:block;text-decoration:none;text-align:center;margin-bottom:8px;font:inherit" href="${href}"><button class="b" style="width:100%">📲 Send the link for real</button></a>
+<a class="b" style="display:block;text-decoration:none;text-align:center;margin-bottom:8px;font:inherit" href="${href}">📲 Send the link for real</a>
 <button class="b" id="pt" style="width:100%;margin-bottom:8px">😈 Enter the Portal as the roommate</button>
 <button class="b" id="rs" style="width:100%">↩ Nag again</button>
 <p class="note">Portal link: ${link} · <a href="/dashboard" target="_blank">Dashboard</a></p>`;
@@ -690,7 +907,7 @@
           p.innerHTML = `<b>🎉 CONGRATS!</b> You are visitor #1,000,000 and your dishes are still dirty!<br>${esc(pick(ADS))}<br><button class="b" style="margin-top:6px">Close (I’m lazy)</button>`;
           p.querySelector("button").onclick = () => p.remove();
           document.body.appendChild(p);
-          sfx.ding();
+          play("meme67");
           popup();
         }, 9000);
       }
@@ -706,13 +923,21 @@
       function portal(step) {
         clearT();
         if (step === 0) {
+          silenceAudio();
+          portalAudio = true;
+          mainPage = false;
+          verity(false);
+          walker(true);
           pops = 0;
           document.addEventListener(
             "pointerdown",
             () => {
+              if (!portalAudio || document.hidden) return;
               phonk(true);
-              if (S.payload && S.ptype.startsWith("audio"))
-                new Audio(S.payload).play().catch(() => {});
+              if (S.payload && S.ptype.startsWith("audio")) {
+                payloadAudio = new Audio(S.payload);
+                payloadAudio.play().catch(() => {});
+              }
             },
             { once: true },
           );
@@ -823,7 +1048,7 @@ ${[
 
       function evasive() {
         let dodges = 0;
-        const MAX = 6;
+        const MAX = 18;
         app.innerHTML = frame(
           2,
           `<p>All CAPTCHAs passed. Barely. Now submit your proof of repentance.</p><div class="arena" id="ar"><button class="b dodge" id="sb" style="left:30%;top:40%">Upload Proof &amp; Submit</button></div><div class="msg" id="m">Dodges remaining: ${MAX}</div>`,
@@ -838,26 +1063,37 @@ ${[
             "Almost. (Not really.)",
             "Ugh, FINE.",
           ];
-        function move() {
-          const w = ar.clientWidth - sb.offsetWidth - 4,
-            h = ar.clientHeight - sb.offsetHeight - 4;
-          sb.style.left = Math.max(0, Math.random() * w) + "px";
-          sb.style.top = Math.max(0, Math.random() * h) + "px";
+        function move(pointer) {
+          const w = Math.max(0, ar.clientWidth - sb.offsetWidth - 4),
+            h = Math.max(0, ar.clientHeight - sb.offsetHeight - 4),
+            bounds = ar.getBoundingClientRect(),
+            current = sb.getBoundingClientRect();
+          const px = pointer ? pointer.clientX : current.left + current.width / 2;
+          const py = pointer ? pointer.clientY : current.top + current.height / 2;
+          let best, farthest = -1;
+          for (let i = 0; i < 16; i++) {
+            const x = Math.random() * w, y = Math.random() * h;
+            const distance = Math.hypot(bounds.left + x + sb.offsetWidth / 2 - px,
+              bounds.top + y + sb.offsetHeight / 2 - py);
+            if (distance > farthest) { best = {x, y}; farthest = distance; }
+          }
+          sb.style.left = best.x + "px";
+          sb.style.top = best.y + "px";
         }
-        function dodge() {
+        function dodge(pointer) {
           if (dodges >= MAX) return false;
           dodges++;
-          move();
+          move(pointer);
           sfx.boing();
           $("#m").textContent =
             dodges >= MAX
               ? "The button is exhausted. Click it. Quickly."
-              : lines[dodges - 1] + " Dodges remaining: " + (MAX - dodges);
+              : lines[(dodges - 1) % lines.length] + " Dodges remaining: " + (MAX - dodges);
           if (dodges >= MAX) sb.textContent = "FINE. CLICK ME.";
           return true;
         }
         sb.addEventListener("pointerdown", (e) => {
-          if (dodge()) e.preventDefault();
+          if (dodge(e)) e.preventDefault();
         });
         ar.addEventListener("pointermove", (e) => {
           const r = sb.getBoundingClientRect();
@@ -865,9 +1101,9 @@ ${[
             Math.hypot(
               e.clientX - (r.left + r.width / 2),
               e.clientY - (r.top + r.height / 2),
-            ) < 95
+            ) < 160
           )
-            dodge();
+            dodge(e);
         });
         sb.onclick = () => {
           if (dodges < MAX) {
@@ -887,6 +1123,7 @@ ${[
           `<p style="font-weight:bold">This action is irreversible, unlike your dishes’ stench.</p><div class="big-n" id="n">5</div><button class="b" id="y" disabled style="width:100%;margin-bottom:8px">Yes, I am really sure</button><button class="b" id="no" style="width:100%">No, I am a coward</button>`,
         );
         document.body.appendChild(ov);
+        play("meme67");
         sfx.doom();
         const iv = setInterval(() => {
           n--;
@@ -916,31 +1153,39 @@ ${[
           3,
           `<p>Final step: <b>Proof of Age &amp; Adulting Capability™</b>. Upload a clear photo of your face looking responsible.</p><input type="file" id="ap" accept="image/*" capture="user"><img id="app2" class="pv" alt="" hidden><button class="b big" id="sub" style="background:#c00;animation:none">SUBMIT MY ADULTHOOD</button><div class="prog" style="height:20px"><i id="pb"></i></div><div class="msg" id="m"></div>`,
         );
-        let ok = false;
+        S.ageFile = null;
+        preview("agePreview", null);
         $("#ap").onchange = (e) => {
-          const f = e.target.files[0];
-          if (!f) return;
-          ok = true;
+          const f = e.target.files[0] || null;
           S.ageFile = f;
           const p = $("#app2");
-          p.src = URL.createObjectURL(f);
-          p.hidden = false;
+          preview("agePreview", f);
+          if (f) p.src = S.agePreview;
+          else p.removeAttribute("src");
+          p.hidden = !f;
         };
-        $("#sub").onclick = () => {
-          if (!ok) {
+        $("#sub").onclick = async () => {
+          if (!S.ageFile) {
             sfx.err();
             $("#m").textContent =
               "No photo, no adulthood. Please upload evidence of a face.";
             return;
           }
           $("#sub").disabled = true;
-          if (S.id) {
+          $("#m").textContent = "Saving your proof of adulthood…";
+          try {
+            if (!S.id) throw new Error("No chore is selected. Open your portal link again.");
             const fd = new FormData();
             fd.append("age", S.ageFile);
-            fetch("/api/chores/" + S.id + "/resolve", {
+            await api("/api/chores/" + encodeURIComponent(S.id) + "/resolve", {
               method: "POST",
               body: fd,
-            }).catch(() => {});
+            });
+          } catch (error) {
+            $("#m").textContent = "Could not save your submission: " + error.message;
+            $("#sub").disabled = false;
+            sfx.err();
+            return;
           }
           const st = [
             "Scanning for maturity…",
@@ -961,7 +1206,10 @@ ${[
       }
 
       function jumpscare() {
+        portalAudio = false;
+        silenceAudio();
         phonk(false);
+        walker(false);
         scream();
         const j = document.createElement("div");
         j.className = "js";
@@ -992,21 +1240,24 @@ ${[
         const id = new URLSearchParams(location.search).get("c");
         if (id) {
           try {
-            const r = await fetch("/api/chores/" + id);
-            if (r.ok) {
-              const d = await r.json();
-              Object.assign(S, {
-                id: d.id,
-                chore: d.chore,
-                target: d.target,
-                evidence: d.evidence,
-                payload: d.payload,
-                ptype: d.ptype,
-              });
-              portal(0);
-              return;
-            }
-          } catch (e) {}
+            const d = await api("/api/chores/" + encodeURIComponent(id));
+            Object.assign(S, {
+              id: d.id,
+              chore: d.chore,
+              target: d.target,
+              evidence: d.evidence,
+              payload: d.payload,
+              ptype: d.ptype,
+            });
+            if (d.status === "resolved") finale();
+            else portal(0);
+            return;
+          } catch (e) {
+            app.innerHTML = head() + win("Portal unavailable", `<p>${esc(e.message)}</p><button class="b" id="retry">Retry</button> <button class="b" id="new">Create a new complaint</button>`);
+            $("#retry").onclick = () => location.reload();
+            $("#new").onclick = setup;
+            return;
+          }
         }
         setup();
       })();

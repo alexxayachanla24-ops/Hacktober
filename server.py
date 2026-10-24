@@ -1,49 +1,76 @@
 """Chore Enforcement System 95 - local backend. Run: python server.py"""
-import os, sqlite3, time, uuid
-from flask import Flask, request, jsonify, send_from_directory, g, abort
+import os
+import sqlite3
+import time
+import uuid
+from contextlib import closing
+
+from flask import Blueprint, Flask, current_app, request, jsonify, send_from_directory, g, abort
+from werkzeug.exceptions import HTTPException
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 UPLOADS = os.path.join(BASE, "uploads")
 DB = os.path.join(BASE, "chaos.db")
-os.makedirs(UPLOADS, exist_ok=True)
-EXT = {"png", "jpg", "jpeg", "gif", "webp", "mp3", "wav", "ogg", "m4a", "webm"}
-
-app = Flask(__name__, static_folder="static", static_url_path="/static")
-app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
+MEDIA_TYPES = {
+    "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+    "gif": "image/gif", "webp": "image/webp", "mp3": "audio/mpeg",
+    "wav": "audio/wav", "ogg": "audio/ogg", "m4a": "audio/mp4",
+    "webm": "audio/webm",
+}
+IMAGE_EXT = {ext for ext, mime in MEDIA_TYPES.items() if mime.startswith("image/")}
+routes = Blueprint("chores", __name__)
 
 
 def db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB)
+        g.db = sqlite3.connect(current_app.config["DATABASE"])
         g.db.row_factory = sqlite3.Row
     return g.db
 
 
-@app.teardown_appcontext
 def close_db(_):
     d = g.pop("db", None)
     if d:
         d.close()
 
 
-with sqlite3.connect(DB) as c:
-    c.execute("""CREATE TABLE IF NOT EXISTS chores(
+def init_db():
+    with closing(sqlite3.connect(current_app.config["DATABASE"])) as c, c:
+        c.execute("""CREATE TABLE IF NOT EXISTS chores(
         id TEXT PRIMARY KEY, chore TEXT, target TEXT, evidence TEXT, payload TEXT,
         ptype TEXT, status TEXT DEFAULT 'pending', age_photo TEXT,
         created REAL, resolved REAL)""")
+        if "walker" not in {r[1] for r in c.execute("PRAGMA table_info(chores)")}:
+            c.execute("ALTER TABLE chores ADD COLUMN walker TEXT")
 
 
-def save(field):
-    """Save an uploaded file and return its stored name (or None)."""
+def save(field, allowed=None, required=False):
+    """Validate and save an upload, tracking it for cleanup on failed requests."""
     f = request.files.get(field)
     if not f or not f.filename:
+        if required:
+            abort(400, description=f"{field} photo is required")
         return None, None
     ext = f.filename.rsplit(".", 1)[-1].lower() if "." in f.filename else ""
-    if ext not in EXT:
-        return None, None
+    if ext not in (allowed if allowed is not None else MEDIA_TYPES):
+        abort(400, description=f"Unsupported file type for {field}")
+    if not f.stream.read(1):
+        abort(400, description=f"{field} file is empty")
+    f.stream.seek(0)
     name = uuid.uuid4().hex + "." + ext
-    f.save(os.path.join(UPLOADS, name))
-    return name, f.mimetype
+    path = os.path.join(current_app.config["UPLOAD_FOLDER"], name)
+    g.setdefault("new_uploads", []).append(path)
+    f.save(path)
+    return name, MEDIA_TYPES[ext]
+
+
+def cleanup_uploads(_):
+    if not g.get("uploads_committed", False):
+        for path in g.pop("new_uploads", []):
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
 
 
 def url(name):
@@ -55,41 +82,43 @@ def row_json(r):
             "evidence": url(r["evidence"]), "payload": url(r["payload"]),
             "ptype": r["ptype"] or "", "status": r["status"],
             "age_photo": url(r["age_photo"]), "created": r["created"],
-            "resolved": r["resolved"]}
+            "resolved": r["resolved"], "walker": url(r["walker"])}
 
 
-@app.get("/")
+@routes.get("/")
 def index():
     return send_from_directory(os.path.join(BASE, "static"), "index.html")
 
 
-@app.get("/uploads/<path:name>")
+@routes.get("/uploads/<path:name>")
 def uploads(name):
-    return send_from_directory(UPLOADS, name)
+    return send_from_directory(current_app.config["UPLOAD_FOLDER"], name)
 
 
-@app.post("/api/chores")
+@routes.post("/api/chores")
 def create_chore():
     chore = (request.form.get("chore") or "").strip()[:300]
     target = (request.form.get("target") or "").strip()[:200]
     if not chore or not target:
         return jsonify(error="chore and target are required"), 400
-    ev, _ = save("evidence")
+    ev, _ = save("evidence", IMAGE_EXT)
     pl, ptype = save("payload")
+    walker, _ = save("walker", {"png"})
     cid = uuid.uuid4().hex[:8]
-    db().execute("INSERT INTO chores(id,chore,target,evidence,payload,ptype,created) VALUES(?,?,?,?,?,?,?)",
-                 (cid, chore, target, ev, pl, ptype, time.time()))
+    db().execute("INSERT INTO chores(id,chore,target,evidence,payload,ptype,walker,created) VALUES(?,?,?,?,?,?,?,?)",
+                 (cid, chore, target, ev, pl, ptype, walker, time.time()))
     db().commit()
+    g.uploads_committed = True
     return jsonify(id=cid), 201
 
 
-@app.get("/api/chores")
+@routes.get("/api/chores")
 def list_chores():
     rows = db().execute("SELECT * FROM chores ORDER BY created DESC").fetchall()
     return jsonify([row_json(r) for r in rows])
 
 
-@app.get("/api/chores/<cid>")
+@routes.get("/api/chores/<cid>")
 def get_chore(cid):
     r = db().execute("SELECT * FROM chores WHERE id=?", (cid,)).fetchone()
     if not r:
@@ -97,14 +126,18 @@ def get_chore(cid):
     return jsonify(row_json(r))
 
 
-@app.post("/api/chores/<cid>/resolve")
+@routes.post("/api/chores/<cid>/resolve")
 def resolve(cid):
-    if not db().execute("SELECT 1 FROM chores WHERE id=?", (cid,)).fetchone():
+    row = db().execute("SELECT status FROM chores WHERE id=?", (cid,)).fetchone()
+    if not row:
         abort(404)
-    age, _ = save("age")
+    if row["status"] == "resolved":
+        return jsonify(ok=True)
+    age, _ = save("age", IMAGE_EXT, required=True)
     db().execute("UPDATE chores SET status='resolved', age_photo=?, resolved=? WHERE id=?",
                  (age, time.time(), cid))
     db().commit()
+    g.uploads_committed = True
     return jsonify(ok=True)
 
 
@@ -128,9 +161,38 @@ load();setInterval(load,3000);
 </script>"""
 
 
-@app.get("/dashboard")
+@routes.get("/dashboard")
 def dashboard():
     return DASH
+
+
+def create_app(config=None):
+    app = Flask(__name__, static_folder="static", static_url_path="/static")
+    app.config.from_mapping(
+        DATABASE=DB, UPLOAD_FOLDER=UPLOADS, MAX_CONTENT_LENGTH=50 * 1024 * 1024,
+    )
+    if config:
+        app.config.update(config)
+    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+    app.register_blueprint(routes)
+    app.teardown_appcontext(close_db)
+    app.teardown_appcontext(cleanup_uploads)
+
+    @app.errorhandler(HTTPException)
+    def http_error(error):
+        if request.path.startswith("/api/"):
+            response = error.get_response()
+            response.data = app.json.dumps({"error": error.description})
+            response.content_type = "application/json"
+            return response
+        return error
+
+    with app.app_context():
+        init_db()
+    return app
+
+
+app = create_app()
 
 
 if __name__ == "__main__":
