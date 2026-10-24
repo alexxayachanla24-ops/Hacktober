@@ -154,7 +154,7 @@ class ChoreTests(unittest.TestCase):
         self.assertIsNone(response.json["challenge"])
 
     def test_pages_load(self):
-        for path in ("/", "/dashboard", "/static/tung.js", "/leaderboard", "/static/leaderboard.js"):
+        for path in ("/", "/dashboard", "/static/tung.js", "/leaderboard", "/static/leaderboard.js", "/static/sources/fahh.mp3"):
             with self.client.get(path) as response:
                 self.assertEqual(response.status_code, 200)
 

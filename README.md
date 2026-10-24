@@ -62,6 +62,8 @@ Evidence and completion photos support PNG, JPEG, GIF, and WebP. Payloads also
 support MP3, WAV, OGG, M4A, and WebM audio. Custom walkers must be PNG files.
 The total request limit is 50 MiB. Unsupported and empty files return an error.
 File types are selected by extension; uploaded content is not decoded or scanned.
+Selecting a completion photo in the roommate portal plays the supplied Fahh
+reaction sound. Clearing the file selection does not play it.
 
 ## Checks
 

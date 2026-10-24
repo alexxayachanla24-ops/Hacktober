@@ -11,6 +11,7 @@ function harness(fetch, search = '') {
   const elements = new Map();
   const revoked = [];
   const scheduled = [];
+  const cancelled = [];
   function element(selector) {
     if (!elements.has(selector)) elements.set(selector, {
       value: '', style: {}, dataset: {}, hidden: false, disabled: false, innerHTML: '',
@@ -33,10 +34,10 @@ function harness(fetch, search = '') {
       body: { classList: { remove() {}, add() {} } } },
     window: { addEventListener() {} }, navigator: {},
     setTimeout(fn) { scheduled.push(fn); return scheduled.length; },
-    clearTimeout() {}, cancelAnimationFrame() {},
+    clearTimeout(id) { cancelled.push(id); }, cancelAnimationFrame() {},
   });
   vm.runInContext(script, context);
-  return { element, context, revoked, scheduled, run: code => vm.runInContext(code, context) };
+  return { element, context, revoked, scheduled, cancelled, run: code => vm.runInContext(code, context) };
 }
 
 test('mog battle responds to pushing, ends at full power, and continues once requested', () => {
@@ -180,4 +181,27 @@ test('roulette sends its difficulty and uses the saved server deadline', async (
   assert.equal(sent.get('challenge'), 'easy');
   assert.equal(sent.get('chore'), h.element('#cu').value);
   assert.equal(h.run('S.deadline'), 1300);
+});
+
+test('popup waves share one timer and all pending work is cancelled on navigation', () => {
+  const h = harness(async () => ({}));
+  h.run('popup(); popup();');
+  assert.equal(h.scheduled.length, 1);
+  h.run('popup(50, true);');
+  assert.equal(h.scheduled.length, 2);
+  assert.ok(h.cancelled.includes(1));
+  h.run('clearT();');
+  assert.ok(h.cancelled.includes(2));
+  assert.equal(h.run('popupTimer'), null);
+});
+
+test('selecting a completion photo plays Fahh once; clearing the selection does not', () => {
+  const h = harness(async () => ({}));
+  let plays = 0;
+  h.element('#fahh').play = () => {plays++; return Promise.resolve();};
+  h.run('age();');
+  h.element('#ap').onchange({target:{files:[new Blob(['photo'])]}});
+  assert.equal(plays, 1);
+  h.element('#ap').onchange({target:{files:[]}});
+  assert.equal(plays, 1);
 });

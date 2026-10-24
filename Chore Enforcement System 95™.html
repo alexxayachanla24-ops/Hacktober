@@ -69,8 +69,9 @@ const pick=a=>a[Math.floor(Math.random()*a.length)];
 const shuf=a=>a.map(x=>[Math.random(),x]).sort((p,q)=>p[0]-q[0]).map(x=>x[1]);
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 $('#tk').textContent=ADS.concat(ADS).join('   ★   ');
+let popupTimer=null;
 let timers=[];const T=(f,ms)=>{const t=setTimeout(f,ms);timers.push(t);return t};
-const clearT=()=>{timers.forEach(clearTimeout);timers=[]};
+const clearT=()=>{timers.forEach(clearTimeout);timers=[];popupTimer=null};
 function head(){return `<h1>CHORE ENFORCEMENT SYSTEM 95™</h1><p class="sub">Dish.exe has stopped responding (so have you).</p>`}
 function win(title,body){return `<div class="win"><div class="tb"><span>${title}</span><span>_ □ ✕</span></div><div class="bd">${body}</div></div>`}
 
@@ -140,10 +141,16 @@ const ABSURD_MSGS = [
   "👻 Your future self is crying because of this kitchen."
 ];
 
-function popup(){
-  T(()=>{
+function popup(delay = 1200, hurry = false){
+  if (popupTimer !== null) {
+    if (!hurry) return;
+    clearTimeout(popupTimer);
+  }
+  popupTimer = T(()=>{
+    popupTimer = null;
     // Spawn 5 chaos windows at a time, continuously
     for(let i = 0; i < 5; i++) {
+      while (document.querySelectorAll('.pop').length >= 15) document.querySelector('.pop').remove();
       const p = document.createElement('div');
       p.className = 'pop';
       // Randomize positions wildly across the screen
@@ -157,13 +164,13 @@ function popup(){
                     `<b>${randomText}</b><br>`+
                     `<button class="b" style="margin-top:8px; width:100%; font-size:11px;">Close (Coward)</button>`;
       
-      // Clicking close spawns two MORE popups out of sheer spite
+      // Closing a window can bring the next wave forward.
       p.querySelector('button').onclick = () => {
         p.remove();
         sfx.err();
         if(Math.random() > 0.3) {
           // Spite spawn
-          setTimeout(() => popup(), 50);
+          popup(50, true);
         }
       };
       document.body.appendChild(p);
@@ -171,7 +178,7 @@ function popup(){
     sfx.ding();
     navigator.vibrate && navigator.vibrate([100, 50, 100]);
     popup(); // Keep the infinite loop rolling fast
-  }, 1200); // Fires a new wave every 1.2 seconds
+  }, delay); // One managed wave timer; at most 15 visible windows
 }
 function frame(n,inner){return head()+win(`🧹 Chore Resolution Portal — Step ${n} of 4`,`<div class="prog"><i style="width:${n*25-10}%"></i></div>${inner}`)}
 function portal(step){clearT();if(step===0)pops=0;
